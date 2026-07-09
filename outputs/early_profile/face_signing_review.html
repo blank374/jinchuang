@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Face Signing Candidate Review</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; color: #17202a; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .topbar { position: sticky; top: 0; z-index: 2; padding: 16px 24px; background: #fff; border-bottom: 1px solid #d9dee5; }
+    .topbar h1 { margin: 0 0 6px; font-size: 22px; }
+    .topbar p { margin: 0; color: #5b6573; font-size: 14px; }
+    .summary { margin-top: 10px; display: flex; gap: 18px; font-size: 14px; font-weight: 700; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 20px auto 48px; display: grid; gap: 16px; }
+    .pair { background: #fff; border: 1px solid #d9dee5; border-radius: 8px; overflow: hidden; }
+    .pair header { min-height: 52px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e5e8ec; }
+    .rank { display: inline-block; min-width: 42px; color: #687483; }
+    .arrow { margin: 0 10px; color: #687483; }
+    .distance { white-space: nowrap; padding: 5px 8px; background: #eef2f5; border-radius: 4px; font: 13px Consolas, monospace; }
+    .images { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #d9dee5; }
+    figure { margin: 0; position: relative; background: #101418; }
+    img { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; display: block; }
+    figcaption { position: absolute; left: 8px; bottom: 8px; padding: 4px 7px; background: rgba(0,0,0,.72); color: #fff; font-size: 13px; border-radius: 4px; }
+    .actions { padding: 12px 16px; display: flex; gap: 8px; }
+    button { min-height: 36px; padding: 0 13px; border: 1px solid #b8c0ca; border-radius: 6px; background: #fff; cursor: pointer; font-weight: 700; }
+    button:hover { background: #f1f4f6; }
+    button.selected { color: #fff; border-color: #1769aa; background: #1769aa; }
+    @media (max-width: 680px) {
+      .topbar { padding: 14px 16px; }
+      main { width: calc(100% - 16px); margin-top: 8px; }
+      .pair header { align-items: flex-start; flex-direction: column; gap: 7px; }
+      .images { grid-template-columns: 1fr; }
+      .actions { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <section class="topbar">
+    <h1>Face Signing Candidate Review</h1>
+    <p>Generated 2026-07-09 10:44:30. Lower aHash distance means more similar global appearance; it is not proof of the same person.</p>
+    <div class="summary"><span>Total: 19</span><span id="reviewed">Reviewed: 0</span></div>
+  </section>
+  <main>
+      <article class="pair" data-pair="loan_012__loan_056">
+        <header>
+          <div><span class="rank">#1</span><strong>loan_012</strong><span class="arrow">vs</span><strong>loan_056</strong></div>
+          <span class="distance">aHash distance: 3</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_012/face_signing.jpg" alt="loan_012"><figcaption>loan_012</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_056/face_signing.jpg" alt="loan_056"><figcaption>loan_056</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_042__loan_068">
+        <header>
+          <div><span class="rank">#2</span><strong>loan_042</strong><span class="arrow">vs</span><strong>loan_068</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_042/face_signing.jpg" alt="loan_042"><figcaption>loan_042</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_068/face_signing.jpg" alt="loan_068"><figcaption>loan_068</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_050__loan_074">
+        <header>
+          <div><span class="rank">#3</span><strong>loan_050</strong><span class="arrow">vs</span><strong>loan_074</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_050/face_signing.jpg" alt="loan_050"><figcaption>loan_050</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_074/face_signing.jpg" alt="loan_074"><figcaption>loan_074</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_053__loan_054">
+        <header>
+          <div><span class="rank">#4</span><strong>loan_053</strong><span class="arrow">vs</span><strong>loan_054</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_053/face_signing.jpg" alt="loan_053"><figcaption>loan_053</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_054/face_signing.jpg" alt="loan_054"><figcaption>loan_054</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_012__loan_055">
+        <header>
+          <div><span class="rank">#5</span><strong>loan_012</strong><span class="arrow">vs</span><strong>loan_055</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_012/face_signing.jpg" alt="loan_012"><figcaption>loan_012</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_055/face_signing.jpg" alt="loan_055"><figcaption>loan_055</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_016__loan_058">
+        <header>
+          <div><span class="rank">#6</span><strong>loan_016</strong><span class="arrow">vs</span><strong>loan_058</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_016/face_signing.jpg" alt="loan_016"><figcaption>loan_016</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_058/face_signing.jpg" alt="loan_058"><figcaption>loan_058</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_023__loan_062">
+        <header>
+          <div><span class="rank">#7</span><strong>loan_023</strong><span class="arrow">vs</span><strong>loan_062</strong></div>
+          <span class="distance">aHash distance: 5</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_023/face_signing.jpg" alt="loan_023"><figcaption>loan_023</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_062/face_signing.jpg" alt="loan_062"><figcaption>loan_062</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_011__loan_054">
+        <header>
+          <div><span class="rank">#8</span><strong>loan_011</strong><span class="arrow">vs</span><strong>loan_054</strong></div>
+          <span class="distance">aHash distance: 6</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_011/face_signing.jpg" alt="loan_011"><figcaption>loan_011</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_054/face_signing.jpg" alt="loan_054"><figcaption>loan_054</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_005__loan_052">
+        <header>
+          <div><span class="rank">#9</span><strong>loan_005</strong><span class="arrow">vs</span><strong>loan_052</strong></div>
+          <span class="distance">aHash distance: 6</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_005/face_signing.jpg" alt="loan_005"><figcaption>loan_005</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_052/face_signing.jpg" alt="loan_052"><figcaption>loan_052</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_043__loan_071">
+        <header>
+          <div><span class="rank">#10</span><strong>loan_043</strong><span class="arrow">vs</span><strong>loan_071</strong></div>
+          <span class="distance">aHash distance: 7</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_043/face_signing.jpg" alt="loan_043"><figcaption>loan_043</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_071/face_signing.jpg" alt="loan_071"><figcaption>loan_071</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_058__loan_059">
+        <header>
+          <div><span class="rank">#11</span><strong>loan_058</strong><span class="arrow">vs</span><strong>loan_059</strong></div>
+          <span class="distance">aHash distance: 7</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_058/face_signing.jpg" alt="loan_058"><figcaption>loan_058</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_059/face_signing.jpg" alt="loan_059"><figcaption>loan_059</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_035__loan_067">
+        <header>
+          <div><span class="rank">#12</span><strong>loan_035</strong><span class="arrow">vs</span><strong>loan_067</strong></div>
+          <span class="distance">aHash distance: 7</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_035/face_signing.jpg" alt="loan_035"><figcaption>loan_035</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_067/face_signing.jpg" alt="loan_067"><figcaption>loan_067</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_011__loan_053">
+        <header>
+          <div><span class="rank">#13</span><strong>loan_011</strong><span class="arrow">vs</span><strong>loan_053</strong></div>
+          <span class="distance">aHash distance: 7</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_011/face_signing.jpg" alt="loan_011"><figcaption>loan_011</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_053/face_signing.jpg" alt="loan_053"><figcaption>loan_053</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_025__loan_063">
+        <header>
+          <div><span class="rank">#14</span><strong>loan_025</strong><span class="arrow">vs</span><strong>loan_063</strong></div>
+          <span class="distance">aHash distance: 7</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_025/face_signing.jpg" alt="loan_025"><figcaption>loan_025</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_063/face_signing.jpg" alt="loan_063"><figcaption>loan_063</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_043__loan_070">
+        <header>
+          <div><span class="rank">#15</span><strong>loan_043</strong><span class="arrow">vs</span><strong>loan_070</strong></div>
+          <span class="distance">aHash distance: 8</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_043/face_signing.jpg" alt="loan_043"><figcaption>loan_043</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_070/face_signing.jpg" alt="loan_070"><figcaption>loan_070</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_055__loan_056">
+        <header>
+          <div><span class="rank">#16</span><strong>loan_055</strong><span class="arrow">vs</span><strong>loan_056</strong></div>
+          <span class="distance">aHash distance: 8</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_055/face_signing.jpg" alt="loan_055"><figcaption>loan_055</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_056/face_signing.jpg" alt="loan_056"><figcaption>loan_056</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_042__loan_069">
+        <header>
+          <div><span class="rank">#17</span><strong>loan_042</strong><span class="arrow">vs</span><strong>loan_069</strong></div>
+          <span class="distance">aHash distance: 8</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_042/face_signing.jpg" alt="loan_042"><figcaption>loan_042</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_069/face_signing.jpg" alt="loan_069"><figcaption>loan_069</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_001__loan_030">
+        <header>
+          <div><span class="rank">#18</span><strong>loan_001</strong><span class="arrow">vs</span><strong>loan_030</strong></div>
+          <span class="distance">aHash distance: 8</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_001/face_signing.jpg" alt="loan_001"><figcaption>loan_001</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_030/face_signing.jpg" alt="loan_030"><figcaption>loan_030</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+      <article class="pair" data-pair="loan_016__loan_059">
+        <header>
+          <div><span class="rank">#19</span><strong>loan_016</strong><span class="arrow">vs</span><strong>loan_059</strong></div>
+          <span class="distance">aHash distance: 8</span>
+        </header>
+        <div class="images">
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_016/face_signing.jpg" alt="loan_016"><figcaption>loan_016</figcaption></figure>
+          <figure><img src="file:///D:/GitHub/jinchuang/23-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8A%80%E6%9C%AF%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E8%B5%9B%E9%81%93-%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/%E5%9F%BA%E4%BA%8E%E5%A4%9A%E6%A8%A1%E6%80%81%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%87%91%E8%9E%8D%E5%BD%B1%E5%83%8F%E6%99%BA%E8%83%BD%E7%9B%B8%E4%BC%BC%E5%BA%A6%E6%A3%80%E6%B5%8B%E6%A8%A1%E5%9E%8B/loan_059/face_signing.jpg" alt="loan_059"><figcaption>loan_059</figcaption></figure>
+        </div>
+        <div class="actions" role="group" aria-label="Review result">
+          <button data-value="similar">Likely similar</button>
+          <button data-value="different">Different</button>
+          <button data-value="uncertain">Uncertain</button>
+        </div>
+      </article>
+
+  </main>
+  <script>
+    const storageKey = "face-signing-review-v1";
+    const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    const cards = [...document.querySelectorAll(".pair")];
+    function render() {
+      cards.forEach(card => {
+        const value = state[card.dataset.pair];
+        card.querySelectorAll("button").forEach(button => {
+          button.classList.toggle("selected", button.dataset.value === value);
+        });
+      });
+      document.getElementById("reviewed").textContent =
+        "Reviewed: " + Object.keys(state).filter(key => state[key]).length;
+    }
+    cards.forEach(card => card.querySelectorAll("button").forEach(button => {
+      button.addEventListener("click", () => {
+        state[card.dataset.pair] = button.dataset.value;
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        render();
+      });
+    }));
+    render();
+  </script>
+</body>
+</html>

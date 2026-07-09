@@ -1,0 +1,14 @@
+{
+  "evaluation_type": "proxy",
+  "note": "Positive pairs are deterministic crop/brightness variants; negatives are distinct loan photos. Replace with reviewed pair labels for final reporting.",
+  "positive_pairs": 74,
+  "negative_pairs": 2701,
+  "best_f1_threshold": {
+    "threshold": 0.98,
+    "precision": 0.8904109589041096,
+    "recall": 0.8783783783783784,
+    "f1": 0.8843537414965986,
+    "false_positive_rate": 0.002961865975564606,
+    "review_count": 73.0
+  }
+}
