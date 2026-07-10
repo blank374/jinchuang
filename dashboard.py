@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
+
+from mvp.inference import analyze_image, get_runtime, with_chinese_columns
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "outputs" / "mvp"
@@ -175,6 +178,11 @@ def save_review_label(query_loan_id: str, match_loan_id: str, is_similar: int, n
     st.cache_data.clear()
 
 
+@st.cache_resource(show_spinner=False)
+def load_runtime(output_dir: str):
+    return get_runtime(output_dir)
+
+
 data = load_data()
 summary = data["summary"]
 metrics = data["metrics"]
@@ -214,9 +222,51 @@ st.caption(
     f'上次流水线耗时：{summary["elapsed_seconds"]} 秒 | 标注文件：{data["annotations_path"] or "未找到"}'
 )
 
-tab_overview, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
-    ["检测汇总", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
+tab_upload, tab_overview, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
+    ["上传检测", "检测汇总", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
 )
+
+with tab_upload:
+    st.subheader("上传影像自动检测")
+    st.markdown("上传单张金融影像后，系统会先判断影像类别；若识别为面签照片，则继续进行相似度比对检测。")
+    uploaded = st.file_uploader("上传影像", type=["jpg", "jpeg", "png", "webp", "bmp"])
+    force_search = st.checkbox("即使不是面签照片也强制检索", value=False)
+    top_k = st.number_input("返回相似结果数量", min_value=1, max_value=20, value=5, step=1)
+
+    if uploaded is not None:
+        image = Image.open(uploaded)
+        st.image(image, caption="上传影像", width=360)
+        if st.button("开始检测", type="primary"):
+            with st.spinner("正在加载模型并检测..."):
+                runtime = load_runtime(str(OUTPUT))
+                result = analyze_image(image, runtime, top_k=int(top_k), force_search=force_search)
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("预测影像类别", result["predicted_type_label"])
+            c2.metric("分类置信度", f'{result["confidence"]:.2%}')
+            c3.metric("是否进入相似检索", "是" if result["searched"] else "否")
+
+            score_rows = [
+                {"影像类别": item["label"], "模型得分": item["score"]}
+                for item in result["class_scores"].values()
+            ]
+            st.markdown("**分类得分**")
+            st.dataframe(pd.DataFrame(score_rows), width="stretch", hide_index=True)
+
+            if not result["searched"]:
+                st.info(result.get("message", "未进入相似度检索。"))
+            else:
+                matches = pd.DataFrame(result["matches"])
+                st.markdown("**Top-K 相似度比对结果**")
+                st.dataframe(with_chinese_columns(matches), width="stretch", hide_index=True)
+                for row in result["matches"]:
+                    left, right = st.columns([1, 2])
+                    with left:
+                        st.image(row["match_path"], caption=f'匹配贷款：{row["match_loan_id"]}', width=280)
+                    with right:
+                        st.metric("余弦相似度", f'{row["cosine_similarity"]:.4f}')
+                        st.write(f'风险等级：**{row["risk_level_label"]}**')
+                        st.write(f'相似度排名：`{row["rank"]}`')
 
 with tab_overview:
     st.subheader("数据基础概览")
@@ -281,7 +331,7 @@ with tab_risks:
         ]
     risk_view = risk_view.sort_values("cosine_similarity", ascending=False)
     st.dataframe(
-        risk_view[
+        with_chinese_columns(risk_view[
             [
                 "query_loan_id",
                 "match_loan_id",
@@ -291,7 +341,7 @@ with tab_risks:
                 "match_business_type",
                 "official_similar",
             ]
-        ],
+        ]),
         width="stretch",
         hide_index=True,
     )
@@ -351,7 +401,7 @@ with tab_classification:
     selected_type = st.selectbox("预测类别", ["全部"] + sorted(predictions["predicted_type"].unique().tolist()))
     view = predictions if selected_type == "全部" else predictions[predictions["predicted_type"] == selected_type]
     st.dataframe(
-        view[["loan_id", "image_type", "predicted_type", "confidence", "split", "relative_path"]],
+        with_chinese_columns(view[["loan_id", "image_type", "predicted_type", "confidence", "split", "relative_path"]]),
         width="stretch",
         hide_index=True,
     )

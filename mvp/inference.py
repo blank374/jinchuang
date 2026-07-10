@@ -41,6 +41,10 @@ FIELD_LABELS = {
     "match_path": "匹配图片路径",
     "relative_path": "相对路径",
     "business_type": "业务类型",
+    "query_business_type": "查询贷款业务类型",
+    "match_business_type": "匹配贷款业务类型",
+    "official_similar": "官方标注相似",
+    "split": "数据划分",
 }
 
 

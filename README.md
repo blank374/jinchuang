@@ -65,7 +65,10 @@ GET /predictions?limit=50
 GET /matches/{loan_id}
 GET /risks?min_score=0.9
 GET /calibration
+POST /detect
 ```
+
+`POST /detect` 支持上传单张图片，返回影像自动分类结果；如果图片被识别为面签照片，则继续返回 Top-K 相似面签照片和风险等级。Dashboard 的“上传检测”页签提供同样的交互能力。
 
 ## 输出文件
 

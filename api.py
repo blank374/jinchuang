@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from PIL import Image
+
+from mvp.inference import FIELD_LABELS, analyze_image, get_runtime
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "outputs" / "mvp"
@@ -82,6 +86,27 @@ def calibration() -> dict:
         "confirmed_similar_pairs": positives,
         "rejected_pairs": reviewed - positives,
         "labels_file": str(labels_path),
+    }
+
+
+@app.post("/detect")
+async def detect(
+    file: UploadFile = File(...),
+    top_k: int = Query(default=5, ge=1, le=20),
+    force_search: bool = Query(default=False),
+) -> dict:
+    try:
+        content = await file.read()
+        image = Image.open(io.BytesIO(content))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image file: {exc}") from exc
+
+    runtime = get_runtime(str(OUTPUT))
+    result = analyze_image(image, runtime, top_k=top_k, force_search=force_search)
+    return {
+        "filename": file.filename,
+        "field_meanings": FIELD_LABELS,
+        "result": result,
     }
 
 
