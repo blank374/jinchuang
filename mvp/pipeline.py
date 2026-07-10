@@ -206,7 +206,7 @@ def build_faiss(
     try:
         import faiss
     except ImportError as exc:
-        raise RuntimeError("faiss-cpu is required. Run: python -m pip install -r requirements-mvp.txt") from exc
+        raise RuntimeError("faiss-cpu is required. Run: python -m pip install -r requirements.txt") from exc
 
     vectors = np.ascontiguousarray(embeddings.astype("float32"))
     faiss.normalize_L2(vectors)

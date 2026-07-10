@@ -19,3 +19,6 @@ if (-not $Python) {
 Write-Host ""
 Write-Host "MVP completed. Start the dashboard with:"
 Write-Host "$Python -m streamlit run dashboard.py"
+Write-Host ""
+Write-Host "Or start the API with:"
+Write-Host "$Python -m uvicorn api:app --host 127.0.0.1 --port 8000"
