@@ -23,6 +23,8 @@ IMAGE_TYPES = (
     "id_card_front",
 )
 DEFAULT_MODEL = "google/siglip2-base-patch16-224"
+DEFAULT_HIGH_RISK_THRESHOLD = 0.97
+DEFAULT_MEDIUM_RISK_THRESHOLD = 0.93
 
 
 def find_dataset_root(repo_root: Path) -> Path:
@@ -363,8 +365,9 @@ def run(args: argparse.Namespace) -> None:
     with (output_dir / "threshold_metadata.json").open("w", encoding="utf-8") as handle:
         json.dump(threshold_metadata, handle, ensure_ascii=False, indent=2)
 
-    best_threshold = float(threshold_metadata["best_f1_threshold"]["threshold"])
-    medium_threshold = max(0.0, best_threshold - 0.05)
+    proxy_threshold = float(threshold_metadata["best_f1_threshold"]["threshold"])
+    best_threshold = args.high_risk_threshold
+    medium_threshold = args.medium_risk_threshold
     risk_results = assign_risk(topk, best_threshold, medium_threshold)
     risk_results.to_csv(output_dir / "topk_results.csv", index=False, encoding="utf-8-sig")
 
@@ -380,6 +383,7 @@ def run(args: argparse.Namespace) -> None:
         "top_k": args.top_k,
         "high_risk_threshold": best_threshold,
         "medium_risk_threshold": medium_threshold,
+        "proxy_best_f1_threshold": proxy_threshold,
         "elapsed_seconds": round(time.time() - started, 2),
     }
     with (output_dir / "run_summary.json").open("w", encoding="utf-8") as handle:
@@ -398,6 +402,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--high-risk-threshold", type=float, default=DEFAULT_HIGH_RISK_THRESHOLD)
+    parser.add_argument("--medium-risk-threshold", type=float, default=DEFAULT_MEDIUM_RISK_THRESHOLD)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 

@@ -11,6 +11,7 @@
 +-- api.py                       # FastAPI 查询接口，读取 outputs/mvp 结果
 +-- run_mvp.ps1                  # Windows 一键运行脚本
 +-- requirements.txt             # 统一依赖
++-- docs/experiment_report.md    # 实验结论与阈值校准报告
 +-- outputs/mvp/                 # 运行产物
 +-- scripts/                     # 数据画像与复核报告脚本
 ```
@@ -63,6 +64,7 @@ GET /summary
 GET /predictions?limit=50
 GET /matches/{loan_id}
 GET /risks?min_score=0.9
+GET /calibration
 ```
 
 ## 输出文件
@@ -79,8 +81,21 @@ GET /risks?min_score=0.9
 - `topk_results.csv`：Top-K 相似检索与风险等级
 - `threshold_experiment.csv`：阈值、Precision、Recall、F1、复核量
 - `threshold_metadata.json`：阈值实验说明
+- `review_labels.csv`：人工审核标注，用于校准阈值
 - `run_summary.json`：本次运行摘要
 
 ## 当前方案
 
 主模型默认使用 `google/siglip2-base-patch16-224`。分类部分在图像向量上训练一个线性头，相似度部分只对面签照片建索引。当前阈值实验使用“原图的轻微裁剪/亮度增强”作为正样本代理，不同贷款的面签照片作为负样本代理。正式交付前，建议用人工复核标签或赛题官方相似对标注重新校准阈值。
+
+## 实验结论
+
+本次最终高风险阈值采用 `0.97`，中风险阈值采用 `0.93`：
+
+- `cosine_similarity >= 0.97`：high，必须人工复核
+- `0.93 <= cosine_similarity < 0.97`：medium，建议抽检或二审
+- `cosine_similarity < 0.93`：low，默认低风险
+
+阈值 `0.97` 来自人工审核校准：已审核 44 组候选，其中 `>= 0.97` 的 33 组唯一候选全部确认相似；`0.95 ~ 0.97` 区间开始出现不稳定候选，因此不再下调 high 阈值。
+
+完整实验结论见 [docs/experiment_report.md](docs/experiment_report.md)。

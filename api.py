@@ -63,6 +63,28 @@ def thresholds() -> dict:
     }
 
 
+@app.get("/calibration")
+def calibration() -> dict:
+    summary_data = read_json("run_summary.json")
+    labels_path = OUTPUT / "review_labels.csv"
+    labels = pd.read_csv(labels_path) if labels_path.exists() else pd.DataFrame()
+    positives = int(labels["is_similar"].sum()) if not labels.empty else 0
+    reviewed = int(len(labels))
+    return {
+        "high_risk_threshold": summary_data["high_risk_threshold"],
+        "medium_risk_threshold": summary_data["medium_risk_threshold"],
+        "threshold_basis": "manual_review_calibration",
+        "calibration_note": (
+            ">=0.97 candidates were confirmed similar in manual review; "
+            "0.95~0.97 started to show unstable candidates."
+        ),
+        "reviewed_pairs": reviewed,
+        "confirmed_similar_pairs": positives,
+        "rejected_pairs": reviewed - positives,
+        "labels_file": str(labels_path),
+    }
+
+
 @app.get("/predictions")
 def predictions(
     image_type: str | None = None,
