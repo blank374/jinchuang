@@ -171,6 +171,7 @@ async def search(
     top_k: int | None = Query(default=None, ge=1, le=50),
     query_loan_id: str = Query(default=""),
     force_search: bool = Query(default=False),
+    review_threshold: float | None = Query(default=None, ge=0.0, le=1.0),
 ) -> dict:
     lazy_init()
     from src.risk_policy import assess_match, summarize_risks
@@ -198,6 +199,11 @@ async def search(
         }
 
     requested_top_k = top_k or int(config["app"].get("top_k", 5))
+    effective_review_threshold = (
+        float(review_threshold)
+        if review_threshold is not None
+        else float(config["retrieval"].get("high_risk_threshold", config["retrieval"]["similarity_threshold"]))
+    )
     raw_results = searcher.search(encode_image(image_tensor)[0], top_k=requested_top_k + 5)
     if not query_loan_id:
         query_loan_id = auto_detect_loan_id(raw_results)
@@ -221,6 +227,8 @@ async def search(
                 "raw_rank": rank,
                 "similarity": round(float(item["score"]), 4),
                 "threshold_applied": round(float(risk["threshold_used"]), 4),
+                "review_threshold": round(effective_review_threshold, 4),
+                "selected_by_review_threshold": bool(float(item["score"]) >= effective_review_threshold),
                 "relationship": risk["relation"],
                 "relationship_label": risk["relation_label"],
                 "is_suspicious": risk["is_suspicious"],
@@ -259,7 +267,10 @@ async def search(
             "cross_customer_threshold": risk_policy.cross_customer,
             "same_customer_threshold": risk_policy.same_customer,
             "default_threshold": risk_policy.default,
+            "high_risk_threshold": risk_policy.high_risk,
+            "medium_risk_threshold": risk_policy.medium_risk,
         },
+        "review_threshold": effective_review_threshold,
         "risk_summary": summarize_risks(similar_results),
         "similar_results": similar_results,
     }

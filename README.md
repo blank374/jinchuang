@@ -165,7 +165,9 @@ POST /search
     "enabled": true,
     "cross_customer_threshold": 0.75,
     "same_customer_threshold": 0.92,
-    "default_threshold": 0.94
+    "default_threshold": 0.97,
+    "high_risk_threshold": 0.97,
+    "medium_risk_threshold": 0.93
   },
   "risk_summary": {
     "cross_customer_suspect": 1,
@@ -193,7 +195,9 @@ POST /search
 
 ```yaml
 retrieval:
-  similarity_threshold: 0.94
+  similarity_threshold: 0.97
+  high_risk_threshold: 0.97
+  medium_risk_threshold: 0.93
   dynamic_threshold:
     enabled: true
     fraud: 0.75
@@ -206,7 +210,8 @@ retrieval:
 |---|---|---:|---|
 | 跨客户命中 | `cross_customer` | 0.75 | 疑似冒用/套用，优先召回 |
 | 同客户命中 | `same_customer` | 0.92 | 可能是续贷/复用，减少误报 |
-| 未启用动态策略 | default | 0.94 | 统一相似度阈值 |
+| 当前可疑交易/高风险 | default/high | 0.97 | 原 MVP 人工审核校准阈值 |
+| 中风险候选 | medium | 0.93 | 抽检/二审候选池 |
 
 ## 方案表述
 

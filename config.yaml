@@ -13,7 +13,9 @@ data:
 retrieval:
   index_path: "checkpoints/faiss_index.bin"
   # dynamic_threshold.enabled=false 时使用的统一阈值
-  similarity_threshold: 0.94
+  similarity_threshold: 0.97
+  high_risk_threshold: 0.97
+  medium_risk_threshold: 0.93
   # flat 适合中小规模数据；ivf 适合 10 万级以上数据
   index_type: "flat"
   nlist: 100

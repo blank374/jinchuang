@@ -122,7 +122,7 @@ def auto_detect_loan_id(results):
     return ""
 
 
-def predict(image, query_loan_id=""):
+def predict(image, query_loan_id="", review_threshold=None):
     try:
         if image is None:
             return "请上传图片", None, None, "等待检测..."
@@ -176,10 +176,16 @@ def predict(image, query_loan_id=""):
         dyn = config["retrieval"].get("dynamic_threshold", {})
         use_dynamic = dyn.get("enabled", False)
         single_threshold = config["retrieval"]["similarity_threshold"]
+        manual_threshold = float(review_threshold) if review_threshold is not None else float(
+            config["retrieval"].get("high_risk_threshold", single_threshold)
+        )
 
         if use_dynamic:
             output_lines = ["【可疑相似结果】（差异化阈值策略）"]
             output_lines.append(f"  跨客户欺诈阈值: {dyn['fraud']} | 同客户续贷阈值: {dyn['same_customer']}")
+            output_lines.append(
+                f"  当前可疑交易阈值: {manual_threshold:.2f} | 高风险阈值: {risk_policy.high_risk:.2f} | 中风险阈值: {risk_policy.medium_risk:.2f}"
+            )
             if query_loan_id:
                 output_lines.append(f"  查询贷款ID: {query_loan_id}")
             else:
@@ -215,12 +221,14 @@ def predict(image, query_loan_id=""):
                 rel_str = ""
 
             flag = "⚠️ 可疑" if score >= threshold else ""
+            manual_flag = " | 命中当前阈值" if score >= manual_threshold else ""
             if flag:
                 suspicious_count += 1
 
             output_lines.append(
                 f"排名{displayed_count + 1}: 相似度 {score:.4f} {'≥' if score >= threshold else '<'}{threshold} {flag}{rel_str}\n"
-                f"        业务ID: {result_loan_id} | 类型: {res['metadata']['cat_name']}"
+                f"        业务ID: {result_loan_id} | 类型: {res['metadata']['cat_name']}\n"
+                f"        风险等级: {risk['risk_level']} | 风险类型: {risk['risk_type_label']} | 复核优先级: {risk['review_priority']}{manual_flag}"
             )
             displayed_count += 1
 
@@ -429,6 +437,14 @@ with gr.Blocks(title="金融影像智能相似度检测", theme=gr.themes.Soft()
                                         placeholder="留空自动识别，手动输入可覆盖",
                                         info="图片已在索引中则自动识别贷款ID；手动输入可用于新图片或覆盖自动结果",
                                         max_lines=1)
+                review_threshold = gr.Slider(
+                    label="当前可疑交易阈值（手动查看）",
+                    minimum=0.50,
+                    maximum=1.00,
+                    value=float(config["retrieval"].get("high_risk_threshold", config["retrieval"]["similarity_threshold"])),
+                    step=0.01,
+                    info="默认 0.97；拖动后可查看哪些相似结果命中当前阈值。",
+                )
                 submit_btn = gr.Button("开始检测", variant="primary", size="lg")
             status_box = gr.Textbox(label="状态", value="等待检测...", interactive=False)
 
@@ -478,7 +494,7 @@ with gr.Blocks(title="金融影像智能相似度检测", theme=gr.themes.Soft()
 
     submit_btn.click(
         fn=predict,
-        inputs=[input_img, query_loan],
+        inputs=[input_img, query_loan, review_threshold],
         outputs=[classify_output, retrieve_output, similar_gallery, status_box],
     )
 

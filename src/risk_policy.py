@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 SAME_CUSTOMER_THRESHOLD = 0.92
 CROSS_CUSTOMER_THRESHOLD = 0.75
+HIGH_RISK_THRESHOLD = 0.97
+MEDIUM_RISK_THRESHOLD = 0.93
 
 RELATION_LABELS = {
     "self": "self match",
@@ -32,7 +34,9 @@ class ThresholdPolicy:
     enabled: bool = True
     same_customer: float = SAME_CUSTOMER_THRESHOLD
     cross_customer: float = CROSS_CUSTOMER_THRESHOLD
-    default: float = 0.94
+    default: float = HIGH_RISK_THRESHOLD
+    high_risk: float = HIGH_RISK_THRESHOLD
+    medium_risk: float = MEDIUM_RISK_THRESHOLD
 
     @classmethod
     def from_config(cls, config: dict) -> "ThresholdPolicy":
@@ -42,7 +46,9 @@ class ThresholdPolicy:
             enabled=bool(dynamic.get("enabled", False)),
             same_customer=float(dynamic.get("same_customer", SAME_CUSTOMER_THRESHOLD)),
             cross_customer=float(dynamic.get("fraud", CROSS_CUSTOMER_THRESHOLD)),
-            default=float(retrieval.get("similarity_threshold", 0.94)),
+            default=float(retrieval.get("similarity_threshold", HIGH_RISK_THRESHOLD)),
+            high_risk=float(retrieval.get("high_risk_threshold", HIGH_RISK_THRESHOLD)),
+            medium_risk=float(retrieval.get("medium_risk_threshold", MEDIUM_RISK_THRESHOLD)),
         )
 
 
@@ -85,12 +91,15 @@ def assess_match(
     else:
         risk_type = "normal_low_risk"
 
-    if risk_type == "cross_customer_suspect" and score >= policy.same_customer:
+    if is_suspicious and score >= policy.high_risk:
         risk_level = "high"
         review_priority = "urgent"
-    elif risk_type in {"cross_customer_suspect", "same_customer_repeat"}:
+    elif is_suspicious and score >= policy.medium_risk:
         risk_level = "medium"
         review_priority = "standard"
+    elif risk_type in {"cross_customer_suspect", "same_customer_repeat"}:
+        risk_level = "low"
+        review_priority = "low"
     else:
         risk_level = "low"
         review_priority = "low"
@@ -99,6 +108,8 @@ def assess_match(
         "relation": relation,
         "relation_label": RELATION_LABELS.get(relation, relation),
         "threshold_used": threshold,
+        "high_risk_threshold": policy.high_risk,
+        "medium_risk_threshold": policy.medium_risk,
         "is_suspicious": is_suspicious,
         "risk_type": risk_type,
         "risk_type_label": RISK_TYPE_LABELS[risk_type],
