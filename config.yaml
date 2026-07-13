@@ -1,6 +1,8 @@
 model:
+  # 主模型：用于影像分类、特征提取和相似度检索
   name: "google/siglip2-base-patch16-224"
   embedding_dim: 768
+  # 基线模型：用于论文/答辩中的对照说明
   baseline_name: "openai/clip-vit-base-patch32"
 
 data:
@@ -10,20 +12,24 @@ data:
 
 retrieval:
   index_path: "checkpoints/faiss_index.bin"
-  similarity_threshold: 0.94   # 默认阈值（dynamic_threshold.enabled=false 时使用）
-  index_type: "flat"       # "flat" 或 "ivf"（数据>10万推荐ivf）
-  nlist: 100               # IVF 聚类中心数（仅 index_type=ivf 时生效）
+  # dynamic_threshold.enabled=false 时使用的统一阈值
+  similarity_threshold: 0.94
+  # flat 适合中小规模数据；ivf 适合 10 万级以上数据
+  index_type: "flat"
+  nlist: 100
   dynamic_threshold:
-    enabled: true            # true 启用差异化阈值策略
-    fraud: 0.75              # 跨客户欺诈阈值（高召回，宁可错杀不可放过）
-    same_customer: 0.92      # 同客户续贷阈值（高精度，减少正常业务打扰）
+    enabled: true
+    # 跨客户命中更危险，采用较低阈值提高召回
+    fraud: 0.75
+    # 同客户续贷/复用更可能是正常业务，采用较高阈值减少误报
+    same_customer: 0.92
 
 preprocessing:
-  auto_rotate: true        # 自动旋转矫正
-  enhance_contrast: true   # CLAHE 光照增强
-  face_detect: false       # 人脸检测裁剪（OpenCV 5 不支持，禁用）
-  face_margin: 0.3         # 面部区域外扩比例
-  perspective_correct: true  # 透视矫正（合同/文档场景可选）
+  auto_rotate: true
+  enhance_contrast: true
+  face_detect: false
+  face_margin: 0.3
+  perspective_correct: true
 
 classifier:
   categories:
@@ -57,21 +63,22 @@ classifier:
         - "a photo of a building or house exterior"
 
 training:
-  triplet_margin: 0.3        # 标准 TripletLoss margin（仅标准模式使用）
+  triplet_margin: 0.3
   dual_margin:
-    enabled: true            # true 启用分层双 Margin Loss（false 使用标准 TripletLoss）
-    m1: 0.3                   # 普通间隔：同客户 vs 陌生人
-    m2: 0.8                   # 欺诈间隔：同客户 vs 跨客户高仿（m2 > m1）
-    sim_threshold: 0.85       # 余弦相似度阈值，超过此值判为高仿
+    enabled: true
+    m1: 0.3
+    m2: 0.8
+    sim_threshold: 0.85
   epochs: 20
   learning_rate: 0.0001
   val_split: 0.2
-  freeze_backbone: true    # 冻结 CLIP，仅训练分类头
-  augment_prob: 0.8        # 正样本数据增强概率（重复提交图增加多样性）
+  # 冻结视觉语言模型 backbone，仅训练轻量 adapter / 分类头
+  freeze_backbone: true
+  augment_prob: 0.8
   output_dir: "checkpoints/finetuned"
 
 app:
-  top_k: 5  # 检索返回最相似的5张
+  top_k: 5
 
 evaluate:
   test_dir: "test_eval"
