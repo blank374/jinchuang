@@ -1,4 +1,44 @@
+# Python 缓存
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 项目数据（赛题数据集，ZIP 包约 400MB）
+data/
+
+# FAISS 索引与模型检查点
+checkpoints/
+faiss_index.bin
+
+# 评估输出
+eval_results/
+test_eval/
+
+# 运行时报告
+reports/
+
+# 提交包与生成文档
+Submission.zip
+部署文档.pdf
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统生成文件
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# 日志
 *.log
-~$*

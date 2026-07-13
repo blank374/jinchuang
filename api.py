@@ -1,150 +1,315 @@
-from __future__ import annotations
+"""
+FastAPI REST 接口：复用 main.py 中的全局组件，提供 HTTP API 服务
 
+启动:
+    python api.py                  # http://localhost:8000
+    python api.py --port 8080      # 自定义端口
+    uvicorn api:app --host 0.0.0.0 --port 8000  # uvicorn 直接启动
+
+接口:
+    POST /classify      上传图片 → 分类
+    POST /search        上传图片 → 分类 → 检索相似
+    GET  /stats         索引统计信息
+    GET  /health        健康检查
+"""
+import os
+import sys
+import argparse
 import io
-import json
-from pathlib import Path
+from contextlib import asynccontextmanager
 
-import pandas as pd
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+# 将项目根目录加入路径
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+import uvicorn
+import yaml
+import torch
+import numpy as np
 from PIL import Image
+from pydantic import BaseModel
 
-from mvp.inference import FIELD_LABELS, analyze_image, get_runtime
+# 延迟初始化（首次请求时加载）
 
-ROOT = Path(__file__).resolve().parent
-OUTPUT = ROOT / "outputs" / "mvp"
+@asynccontextmanager
+async def lifespan(app):
+    print("API 服务启动中...")
+    lazy_init()
+    print("API 服务就绪")
+    yield
 
 app = FastAPI(
-    title="Financial Image Similarity MVP API",
+    title="金融影像智能相似度检测 API",
+    description="基于多模态大模型的金融影像智能相似度检测服务",
     version="1.0.0",
-    description="Read-only API for results produced by mvp.pipeline.",
+    lifespan=lifespan,
 )
 
-
-def require_output_file(name: str) -> Path:
-    path = OUTPUT / name
-    if not path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"{name} not found. Run: python -m mvp.pipeline",
-        )
-    return path
+# 全局状态
+extractor = None
+searcher = None
+classifier = None
+preprocessor = None
+config = None
+loan_to_sg = {}  # loan_id → similar_group 映射
 
 
-def read_json(name: str) -> dict:
-    with require_output_file(name).open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+def lazy_init():
+    """懒加载：首次请求时初始化所有组件"""
+    global extractor, searcher, classifier, preprocessor, config, loan_to_sg
+
+    if extractor is not None:
+        return
+
+    # 加载配置
+    with open("config.yaml", "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    from src.model import CLIPFeatureExtractor
+    from src.retrieval import SimilaritySearch
+    from src.classifier import ImageClassifier
+    from src.preprocessing import PreprocessingPipeline
+
+    extractor = CLIPFeatureExtractor()
+    searcher = SimilaritySearch(
+        embedding_dim=config["model"]["embedding_dim"],
+        index_type=config["retrieval"].get("index_type", "flat"),
+    )
+    classifier = ImageClassifier(
+        model=extractor.model,
+        processor=extractor.processor,
+        categories=config["classifier"]["categories"],
+        device=extractor.device,
+    )
+    preprocessor = PreprocessingPipeline(config.get("preprocessing", {}))
+
+    searcher.load()
+
+    # 构建 loan_id → similar_group 映射
+    for m in searcher.metadata:
+        sg = m.get("similar_group", "")
+        loan = m.get("loan_id", "")
+        if sg and loan:
+            loan_to_sg[loan] = sg
 
 
-def read_csv(name: str) -> pd.DataFrame:
-    return pd.read_csv(require_output_file(name))
+def preprocess_image(image: Image.Image):
+    """统一预处理流程"""
+    image = preprocessor(image)
+    image = image.convert("RGB")
+    img_tensor = torch.tensor(np.array(image.resize((224, 224))).transpose(2, 0, 1)).float() / 255.0
+    img_tensor = img_tensor.unsqueeze(0)
+    return image, img_tensor
 
-
-def frame_records(frame: pd.DataFrame) -> list[dict]:
-    return frame.where(pd.notnull(frame), None).to_dict(orient="records")
 
 
 @app.get("/health")
-def health() -> dict:
-    ready = (OUTPUT / "run_summary.json").exists()
-    return {"status": "ok" if ready else "missing_outputs", "output_dir": str(OUTPUT)}
-
-
-@app.get("/summary")
-def summary() -> dict:
-    return read_json("run_summary.json")
-
-
-@app.get("/metrics")
-def metrics() -> dict:
-    return read_json("classification_metrics.json")
-
-
-@app.get("/thresholds")
-def thresholds() -> dict:
+async def health():
+    """健康检查"""
+    lazy_init()
+    total = searcher.index.ntotal if searcher and searcher.index else 0
     return {
-        "metadata": read_json("threshold_metadata.json"),
-        "rows": frame_records(read_csv("threshold_experiment.csv")),
+        "status": "ok",
+        "index_size": total,
+        "model": config["model"]["name"] if config else "unknown",
     }
 
 
-@app.get("/calibration")
-def calibration() -> dict:
-    summary_data = read_json("run_summary.json")
-    labels_path = OUTPUT / "review_labels.csv"
-    labels = pd.read_csv(labels_path) if labels_path.exists() else pd.DataFrame()
-    positives = int(labels["is_similar"].sum()) if not labels.empty else 0
-    reviewed = int(len(labels))
+@app.get("/stats")
+async def stats():
+    """索引统计信息"""
+    lazy_init()
+    if not searcher.index or searcher.index.ntotal == 0:
+        return {"total": 0, "category_distribution": {}}
+
+    total = searcher.index.ntotal
+    from collections import Counter
+    cat_counter = Counter()
+    for m in searcher.metadata:
+        cat_counter[m.get("cat_name", "未知")] += 1
+
     return {
-        "high_risk_threshold": summary_data["high_risk_threshold"],
-        "medium_risk_threshold": summary_data["medium_risk_threshold"],
-        "threshold_basis": "manual_review_calibration",
-        "calibration_note": (
-            ">=0.97 candidates were confirmed similar in manual review; "
-            "0.95~0.97 started to show unstable candidates."
-        ),
-        "reviewed_pairs": reviewed,
-        "confirmed_similar_pairs": positives,
-        "rejected_pairs": reviewed - positives,
-        "labels_file": str(labels_path),
+        "total": total,
+        "index_type": searcher.index_type,
+        "embedding_dim": searcher.embedding_dim,
+        "category_distribution": dict(cat_counter.most_common()),
     }
 
 
-@app.post("/detect")
-async def detect(
-    file: UploadFile = File(...),
-    top_k: int = Query(default=5, ge=1, le=20),
-    force_search: bool = Query(default=False),
-) -> dict:
+@app.post("/classify")
+async def classify(file: UploadFile = File(...)):
+    """上传一张图片，返回分类结果"""
+    lazy_init()
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "请上传图片文件")
+
     try:
-        content = await file.read()
-        image = Image.open(io.BytesIO(content))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid image file: {exc}") from exc
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(400, f"图片解析失败: {str(e)}")
 
-    runtime = get_runtime(str(OUTPUT))
-    result = analyze_image(image, runtime, top_k=top_k, force_search=force_search)
-    return {
-        "filename": file.filename,
-        "field_meanings": FIELD_LABELS,
-        "result": result,
-    }
+    try:
+        _, img_tensor = preprocess_image(image)
+        cat_id, cat_name, scores = classifier.classify(img_tensor)
+        is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
 
-
-@app.get("/predictions")
-def predictions(
-    image_type: str | None = None,
-    predicted_type: str | None = None,
-    limit: int = Query(default=100, ge=1, le=1000),
-) -> dict:
-    frame = read_csv("classification_predictions.csv")
-    if image_type:
-        frame = frame[frame["image_type"] == image_type]
-    if predicted_type:
-        frame = frame[frame["predicted_type"] == predicted_type]
-    return {"count": int(len(frame)), "rows": frame_records(frame.head(limit))}
+        return {
+            "filename": file.filename,
+            "category_id": cat_id,
+            "category_name": cat_name,
+            "sign_confidence": round(float(sign_conf), 4),
+            "is_sign_photo": bool(is_sign),
+            "all_scores": {k: round(float(v), 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])},
+        }
+    except Exception as e:
+        raise HTTPException(500, f"分类失败: {str(e)}")
 
 
-@app.get("/matches/{loan_id}")
-def matches(loan_id: str, threshold: float | None = None) -> dict:
-    frame = read_csv("topk_results.csv")
-    rows = frame[frame["query_loan_id"] == loan_id].copy()
-    if rows.empty:
-        raise HTTPException(status_code=404, detail=f"No matches found for {loan_id}")
-    if threshold is not None:
-        rows["selected_by_threshold"] = rows["cosine_similarity"] >= threshold
-    return {"loan_id": loan_id, "count": int(len(rows)), "rows": frame_records(rows)}
+def _get_effective_threshold(query_loan_id: str, result_metadata: dict):
+    """内部辅助：判定检索结果的关系类型和对应阈值
+
+    Returns:
+        (threshold, relationship)
+        relationship: "self" / "same_customer" / "cross_customer" / ""
+    """
+    dyn = config["retrieval"].get("dynamic_threshold", {})
+    if not dyn.get("enabled", False):
+        return config["retrieval"]["similarity_threshold"], ""
+
+    result_loan_id = result_metadata.get("loan_id", "")
+    result_sg = result_metadata.get("similar_group", "")
+
+    if query_loan_id and query_loan_id == result_loan_id:
+        return 1.0, "self"
+
+    query_sg = loan_to_sg.get(query_loan_id, "") if query_loan_id else ""
+    if query_sg and result_sg and query_sg == result_sg:
+        return dyn.get("same_customer", 0.92), "same_customer"
+
+    return dyn.get("fraud", 0.75), "cross_customer"
 
 
-@app.get("/risks")
-def risks(
-    min_score: float | None = None,
-    risk_level: str | None = None,
-    limit: int = Query(default=100, ge=1, le=1000),
-) -> dict:
-    frame = read_csv("topk_results.csv")
-    if min_score is not None:
-        frame = frame[frame["cosine_similarity"] >= min_score]
-    if risk_level:
-        frame = frame[frame["risk_level"] == risk_level]
-    frame = frame.sort_values("cosine_similarity", ascending=False)
-    return {"count": int(len(frame)), "rows": frame_records(frame.head(limit))}
+def _auto_detect_loan_id(results):
+    """从检索结果自动识别查询图片的贷款ID（相似度≈1.0 的即为原图）"""
+    for r in results:
+        if r["score"] >= 0.999:
+            return r["metadata"].get("loan_id", "")
+    return ""
+
+
+@app.post("/search")
+async def search(file: UploadFile = File(...), top_k: int = None, query_loan_id: str = ""):
+    """上传图片，分类后检索相似影像
+
+    Args:
+        file: 上传的图片
+        top_k: 返回最相似结果数（默认 config.app.top_k）
+        query_loan_id: 查询贷款ID（可选），用于差异化阈值判定：
+            - 同 loan_id 的已有记录 → 跳过自身
+            - 同 similar_group 的贷款 → 续贷审核（高阈值）
+            - 其他 → 跨客户欺诈检测（低阈值）
+    """
+    lazy_init()
+
+    if top_k is None:
+        top_k = config["app"]["top_k"]
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "请上传图片文件")
+
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(400, f"图片解析失败: {str(e)}")
+
+    try:
+        _, img_tensor = preprocess_image(image)
+
+        # 分类
+        cat_id, cat_name, scores = classifier.classify(img_tensor)
+        is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
+
+        # 特征提取
+        with torch.no_grad():
+            feat = extractor.extract(img_tensor)
+        feat_np = feat.cpu().numpy().astype(np.float32)
+        feat_norm = np.linalg.norm(feat_np)
+        if feat_norm > 0:
+            feat_np = feat_np / feat_norm
+
+        # 检索
+        results = searcher.search(feat_np[0], top_k=top_k)
+
+        # 自动识别贷款ID（如未手动输入）
+        if not query_loan_id:
+            detected = _auto_detect_loan_id(results)
+            if detected:
+                query_loan_id = detected
+
+        # 差异化阈值判定
+        dynt = config["retrieval"].get("dynamic_threshold", {})
+        use_dynamic = dynt.get("enabled", False)
+
+        similar_results = []
+        for i, r in enumerate(results):
+            if use_dynamic:
+                threshold, rel = _get_effective_threshold(query_loan_id, r["metadata"])
+                if rel == "self":
+                    continue  # 跳过自身匹配
+                rel_labels = {"same_customer": "同客户续贷", "cross_customer": "跨客户欺诈"}
+            else:
+                threshold = config["retrieval"]["similarity_threshold"]
+                rel = ""
+
+            similar_results.append({
+                "rank": i + 1,
+                "similarity": round(float(r["score"]), 4),
+                "threshold_applied": threshold,
+                "relationship": rel_labels.get(rel, "") if rel else "",
+                "is_suspicious": r["score"] >= threshold,
+                "biz_id": r["metadata"].get("loan_id", ""),
+                "category": r["metadata"].get("cat_name", ""),
+                "business_type": r["metadata"].get("business_type", ""),
+                "similar_group": r["metadata"].get("similar_group", ""),
+                "path": r["metadata"].get("path", ""),
+            })
+
+        return {
+            "filename": file.filename,
+            "category_id": cat_id,
+            "category_name": cat_name,
+            "sign_confidence": round(float(sign_conf), 4),
+            "is_sign_photo": bool(is_sign),
+            "all_scores": {k: round(float(v), 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])},
+            "dynamic_threshold": {
+                "enabled": use_dynamic,
+                "fraud_threshold": dynt.get("fraud", 0) if use_dynamic else None,
+                "same_customer_threshold": dynt.get("same_customer", 0) if use_dynamic else None,
+            } if use_dynamic else None,
+            "similar_results": similar_results,
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"检索失败: {str(e)}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="启动 API 服务")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="监听地址")
+    parser.add_argument("--port", type=int, default=8000, help="监听端口")
+    args = parser.parse_args()
+
+    print(f"启动 API 服务: http://{args.host}:{args.port}")
+    print(f"接口文档: http://{args.host}:{args.port}/docs")
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
