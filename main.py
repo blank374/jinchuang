@@ -9,6 +9,7 @@ from src.model import CLIPFeatureExtractor
 from src.retrieval import SimilaritySearch
 from src.classifier import ImageClassifier
 from src.preprocessing import PreprocessingPipeline
+from src.risk_policy import ThresholdPolicy, assess_match, summarize_risks
 import yaml
 from collections import Counter
 
@@ -17,7 +18,8 @@ with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 # 初始化全局组件
-extractor = CLIPFeatureExtractor()
+extractor = CLIPFeatureExtractor(model_name=config["model"]["name"])
+risk_policy = ThresholdPolicy.from_config(config)
 searcher = SimilaritySearch(
     embedding_dim=config["model"]["embedding_dim"],
     index_type=config["retrieval"].get("index_type", "flat"),
@@ -128,8 +130,7 @@ def predict(image, query_loan_id=""):
         # 1. 预处理（增强链 + 面签人脸裁剪）
         image = preprocessor(image)
         image = image.convert("RGB")
-        img_tensor = torch.tensor(np.array(image.resize((224, 224))).transpose(2, 0, 1)).float() / 255.0
-        img_tensor = img_tensor.unsqueeze(0)
+        img_tensor = extractor.preprocess(image)
 
         # 2. 影像分类
         _, cat_name, scores = classifier.classify(img_tensor)
@@ -194,9 +195,17 @@ def predict(image, query_loan_id=""):
                 break
             score = res["score"]
             result_loan_id = res["metadata"].get("loan_id", "")
+            risk = assess_match(
+                score=float(score),
+                query_loan_id=query_loan_id,
+                metadata=res["metadata"],
+                loan_to_group=loan_to_sg,
+                policy=risk_policy,
+            )
 
             if use_dynamic:
-                threshold, rel = get_effective_threshold(query_loan_id, res["metadata"], config)
+                threshold = risk["threshold_used"]
+                rel = risk["relation"]
                 if rel == "self":
                     continue  # 跳过自身匹配
                 rel_labels = {"same_customer": "同客户", "cross_customer": "跨客户"}
@@ -293,8 +302,7 @@ def batch_predict(images, query_loan_id=""):
             # 预处理 + 分类
             processed = preprocessor(img)
             processed = processed.convert("RGB")
-            img_tensor = torch.tensor(np.array(processed.resize((224, 224))).transpose(2, 0, 1)).float() / 255.0
-            img_tensor = img_tensor.unsqueeze(0)
+            img_tensor = extractor.preprocess(processed)
 
             _, cat_name, _ = classifier.classify(img_tensor)
             is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
@@ -332,7 +340,15 @@ def batch_predict(images, query_loan_id=""):
                 is_suspicious = False
                 suspicious_ids = []
                 for r in results:
-                    threshold, rel = get_effective_threshold(img_loan_id, r["metadata"], config)
+                    risk = assess_match(
+                        score=float(r["score"]),
+                        query_loan_id=img_loan_id,
+                        metadata=r["metadata"],
+                        loan_to_group=loan_to_sg,
+                        policy=risk_policy,
+                    )
+                    threshold = risk["threshold_used"]
+                    rel = risk["relation"]
                     if rel == "self":
                         continue
                     if r["score"] > max_score:

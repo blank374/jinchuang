@@ -1,6 +1,7 @@
 model:
-  name: "openai/clip-vit-base-patch32"
-  embedding_dim: 512
+  name: "google/siglip2-base-patch16-224"
+  embedding_dim: 768
+  baseline_name: "openai/clip-vit-base-patch32"
 
 data:
   image_size: 224

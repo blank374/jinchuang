@@ -47,7 +47,9 @@ class ImageClassifier:
 
         with torch.no_grad():
             text_features = self.model.get_text_features(**texts)
-            text_features = F.normalize(text_features, dim=-1)
+            if not isinstance(text_features, torch.Tensor):
+                text_features = text_features.pooler_output
+            text_features = F.normalize(text_features.float(), dim=-1)
 
         # 按类别聚合：取该类下所有 prompt 特征的最大值（更鲁棒）
         num_cats = len(self.categories)
@@ -57,7 +59,7 @@ class ImageClassifier:
             if mask:
                 feats = text_features[mask]  # [num_prompts, D]
                 # 取平均
-                cat_features.append(feats.mean(dim=0, keepdim=True))
+                cat_features.append(F.normalize(feats.mean(dim=0, keepdim=True), dim=-1))
             else:
                 cat_features.append(torch.zeros(1, text_features.size(-1), device=self.device))
 
@@ -104,7 +106,7 @@ class ImageClassifier:
         """
         cat_id, cat_name, scores = self.classify(image_tensor)
         sign_score = scores.get("面签照片", 0.0)
-        return cat_name == "面签照片", sign_score
+        return cat_id == "sign_photo", sign_score
 
 
 # 简单测试

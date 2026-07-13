@@ -1,82 +1,73 @@
-"""
-FastAPI REST 接口：复用 main.py 中的全局组件，提供 HTTP API 服务
+from __future__ import annotations
 
-启动:
-    python api.py                  # http://localhost:8000
-    python api.py --port 8080      # 自定义端口
-    uvicorn api:app --host 0.0.0.0 --port 8000  # uvicorn 直接启动
-
-接口:
-    POST /classify      上传图片 → 分类
-    POST /search        上传图片 → 分类 → 检索相似
-    GET  /stats         索引统计信息
-    GET  /health        健康检查
-"""
-import os
-import sys
 import argparse
 import io
+import os
+import sys
 from contextlib import asynccontextmanager
-
-# 将项目根目录加入路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
+import numpy as np
+import torch
 import uvicorn
 import yaml
-import torch
-import numpy as np
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from PIL import Image
-from pydantic import BaseModel
 
-# 延迟初始化（首次请求时加载）
 
-@asynccontextmanager
-async def lifespan(app):
-    print("API 服务启动中...")
-    lazy_init()
-    print("API 服务就绪")
-    yield
+ROOT = Path(__file__).resolve().parent
 
-app = FastAPI(
-    title="金融影像智能相似度检测 API",
-    description="基于多模态大模型的金融影像智能相似度检测服务",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# 全局状态
 extractor = None
 searcher = None
 classifier = None
 preprocessor = None
 config = None
-loan_to_sg = {}  # loan_id → similar_group 映射
+loan_to_group: dict[str, str] = {}
+risk_policy = None
 
 
-def lazy_init():
-    """懒加载：首次请求时初始化所有组件"""
-    global extractor, searcher, classifier, preprocessor, config, loan_to_sg
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    lazy_init()
+    yield
+
+
+app = FastAPI(
+    title="Financial Image Similarity API",
+    description="SigLIP2-based financial image classification, retrieval, and stratified risk scoring.",
+    version="1.1.0",
+    lifespan=lifespan,
+)
+
+
+def load_config() -> dict:
+    with (ROOT / "config.yaml").open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def lazy_init() -> None:
+    global extractor, searcher, classifier, preprocessor, config, risk_policy
 
     if extractor is not None:
         return
 
-    # 加载配置
-    with open("config.yaml", "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-
-    from src.model import CLIPFeatureExtractor
-    from src.retrieval import SimilaritySearch
     from src.classifier import ImageClassifier
+    from src.model import CLIPFeatureExtractor
     from src.preprocessing import PreprocessingPipeline
+    from src.retrieval import SimilaritySearch
+    from src.risk_policy import ThresholdPolicy
 
-    extractor = CLIPFeatureExtractor()
+    config = load_config()
+    model_name = config["model"]["name"]
+    extractor = CLIPFeatureExtractor(model_name=model_name)
     searcher = SimilaritySearch(
         embedding_dim=config["model"]["embedding_dim"],
+        index_path=config["retrieval"].get("index_path", "checkpoints/faiss_index.bin"),
         index_type=config["retrieval"].get("index_type", "flat"),
+        nlist=config["retrieval"].get("nlist", 100),
     )
     classifier = ImageClassifier(
         model=extractor.model,
@@ -85,229 +76,200 @@ def lazy_init():
         device=extractor.device,
     )
     preprocessor = PreprocessingPipeline(config.get("preprocessing", {}))
+    risk_policy = ThresholdPolicy.from_config(config)
 
     searcher.load()
+    loan_to_group.clear()
+    for item in searcher.metadata:
+        loan_id = str(item.get("loan_id", "") or item.get("biz_id", ""))
+        similar_group = str(item.get("similar_group", "") or "")
+        if loan_id and similar_group:
+            loan_to_group[loan_id] = similar_group
 
-    # 构建 loan_id → similar_group 映射
-    for m in searcher.metadata:
-        sg = m.get("similar_group", "")
-        loan = m.get("loan_id", "")
-        if sg and loan:
-            loan_to_sg[loan] = sg
+
+def read_image(file: UploadFile, content: bytes) -> Image.Image:
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload an image file.")
+    try:
+        return Image.open(io.BytesIO(content)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not parse image: {exc}") from exc
 
 
-def preprocess_image(image: Image.Image):
-    """统一预处理流程"""
-    image = preprocessor(image)
-    image = image.convert("RGB")
-    img_tensor = torch.tensor(np.array(image.resize((224, 224))).transpose(2, 0, 1)).float() / 255.0
-    img_tensor = img_tensor.unsqueeze(0)
-    return image, img_tensor
+def preprocess_image(image: Image.Image) -> torch.Tensor:
+    processed = preprocessor(image).convert("RGB")
+    return extractor.preprocess(processed)
 
+
+def auto_detect_loan_id(results: list[dict]) -> str:
+    for item in results:
+        if float(item["score"]) >= 0.999:
+            return str(item["metadata"].get("loan_id", "") or item["metadata"].get("biz_id", ""))
+    return ""
+
+
+def encode_image(image_tensor: torch.Tensor) -> np.ndarray:
+    with torch.no_grad():
+        features = extractor.extract(image_tensor)
+    values = features.cpu().numpy().astype(np.float32)
+    norms = np.linalg.norm(values, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return values / norms
 
 
 @app.get("/health")
-async def health():
-    """健康检查"""
+async def health() -> dict:
     lazy_init()
-    total = searcher.index.ntotal if searcher and searcher.index else 0
     return {
         "status": "ok",
-        "index_size": total,
-        "model": config["model"]["name"] if config else "unknown",
+        "model": config["model"]["name"],
+        "baseline_model": config["model"].get("baseline_name"),
+        "embedding_dim": config["model"]["embedding_dim"],
+        "index_size": int(searcher.index.ntotal) if searcher and searcher.index else 0,
+        "risk_policy": getattr(risk_policy, "__class__", type("", (), {})).__name__,
     }
 
 
 @app.get("/stats")
-async def stats():
-    """索引统计信息"""
+async def stats() -> dict:
     lazy_init()
-    if not searcher.index or searcher.index.ntotal == 0:
-        return {"total": 0, "category_distribution": {}}
-
-    total = searcher.index.ntotal
     from collections import Counter
-    cat_counter = Counter()
-    for m in searcher.metadata:
-        cat_counter[m.get("cat_name", "未知")] += 1
 
+    category_counts = Counter(item.get("cat_name", "unknown") for item in searcher.metadata)
     return {
-        "total": total,
+        "total": int(searcher.index.ntotal) if searcher and searcher.index else 0,
         "index_type": searcher.index_type,
         "embedding_dim": searcher.embedding_dim,
-        "category_distribution": dict(cat_counter.most_common()),
+        "category_distribution": dict(category_counts.most_common()),
+        "known_business_groups": len(set(loan_to_group.values())),
     }
 
 
 @app.post("/classify")
-async def classify(file: UploadFile = File(...)):
-    """上传一张图片，返回分类结果"""
+async def classify(file: UploadFile = File(...)) -> dict:
     lazy_init()
-
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "请上传图片文件")
-
-    try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-    except Exception as e:
-        raise HTTPException(400, f"图片解析失败: {str(e)}")
-
-    try:
-        _, img_tensor = preprocess_image(image)
-        cat_id, cat_name, scores = classifier.classify(img_tensor)
-        is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
-
-        return {
-            "filename": file.filename,
-            "category_id": cat_id,
-            "category_name": cat_name,
-            "sign_confidence": round(float(sign_conf), 4),
-            "is_sign_photo": bool(is_sign),
-            "all_scores": {k: round(float(v), 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])},
-        }
-    except Exception as e:
-        raise HTTPException(500, f"分类失败: {str(e)}")
-
-
-def _get_effective_threshold(query_loan_id: str, result_metadata: dict):
-    """内部辅助：判定检索结果的关系类型和对应阈值
-
-    Returns:
-        (threshold, relationship)
-        relationship: "self" / "same_customer" / "cross_customer" / ""
-    """
-    dyn = config["retrieval"].get("dynamic_threshold", {})
-    if not dyn.get("enabled", False):
-        return config["retrieval"]["similarity_threshold"], ""
-
-    result_loan_id = result_metadata.get("loan_id", "")
-    result_sg = result_metadata.get("similar_group", "")
-
-    if query_loan_id and query_loan_id == result_loan_id:
-        return 1.0, "self"
-
-    query_sg = loan_to_sg.get(query_loan_id, "") if query_loan_id else ""
-    if query_sg and result_sg and query_sg == result_sg:
-        return dyn.get("same_customer", 0.92), "same_customer"
-
-    return dyn.get("fraud", 0.75), "cross_customer"
-
-
-def _auto_detect_loan_id(results):
-    """从检索结果自动识别查询图片的贷款ID（相似度≈1.0 的即为原图）"""
-    for r in results:
-        if r["score"] >= 0.999:
-            return r["metadata"].get("loan_id", "")
-    return ""
+    image = read_image(file, await file.read())
+    image_tensor = preprocess_image(image)
+    category_id, category_name, scores = classifier.classify(image_tensor)
+    is_sign, sign_confidence = classifier.is_sign_photo(image_tensor)
+    return {
+        "filename": file.filename,
+        "category_id": category_id,
+        "category_name": category_name,
+        "is_sign_photo": bool(is_sign),
+        "sign_confidence": round(float(sign_confidence), 4),
+        "all_scores": {
+            name: round(float(score), 4)
+            for name, score in sorted(scores.items(), key=lambda item: -item[1])
+        },
+    }
 
 
 @app.post("/search")
-async def search(file: UploadFile = File(...), top_k: int = None, query_loan_id: str = ""):
-    """上传图片，分类后检索相似影像
-
-    Args:
-        file: 上传的图片
-        top_k: 返回最相似结果数（默认 config.app.top_k）
-        query_loan_id: 查询贷款ID（可选），用于差异化阈值判定：
-            - 同 loan_id 的已有记录 → 跳过自身
-            - 同 similar_group 的贷款 → 续贷审核（高阈值）
-            - 其他 → 跨客户欺诈检测（低阈值）
-    """
+async def search(
+    file: UploadFile = File(...),
+    top_k: int | None = Query(default=None, ge=1, le=50),
+    query_loan_id: str = Query(default=""),
+    force_search: bool = Query(default=False),
+) -> dict:
     lazy_init()
+    from src.risk_policy import assess_match, summarize_risks
 
-    if top_k is None:
-        top_k = config["app"]["top_k"]
+    image = read_image(file, await file.read())
+    image_tensor = preprocess_image(image)
+    category_id, category_name, scores = classifier.classify(image_tensor)
+    is_sign, sign_confidence = classifier.is_sign_photo(image_tensor)
 
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "请上传图片文件")
-
-    try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-    except Exception as e:
-        raise HTTPException(400, f"图片解析失败: {str(e)}")
-
-    try:
-        _, img_tensor = preprocess_image(image)
-
-        # 分类
-        cat_id, cat_name, scores = classifier.classify(img_tensor)
-        is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
-
-        # 特征提取
-        with torch.no_grad():
-            feat = extractor.extract(img_tensor)
-        feat_np = feat.cpu().numpy().astype(np.float32)
-        feat_norm = np.linalg.norm(feat_np)
-        if feat_norm > 0:
-            feat_np = feat_np / feat_norm
-
-        # 检索
-        results = searcher.search(feat_np[0], top_k=top_k)
-
-        # 自动识别贷款ID（如未手动输入）
-        if not query_loan_id:
-            detected = _auto_detect_loan_id(results)
-            if detected:
-                query_loan_id = detected
-
-        # 差异化阈值判定
-        dynt = config["retrieval"].get("dynamic_threshold", {})
-        use_dynamic = dynt.get("enabled", False)
-
-        similar_results = []
-        for i, r in enumerate(results):
-            if use_dynamic:
-                threshold, rel = _get_effective_threshold(query_loan_id, r["metadata"])
-                if rel == "self":
-                    continue  # 跳过自身匹配
-                rel_labels = {"same_customer": "同客户续贷", "cross_customer": "跨客户欺诈"}
-            else:
-                threshold = config["retrieval"]["similarity_threshold"]
-                rel = ""
-
-            similar_results.append({
-                "rank": i + 1,
-                "similarity": round(float(r["score"]), 4),
-                "threshold_applied": threshold,
-                "relationship": rel_labels.get(rel, "") if rel else "",
-                "is_suspicious": r["score"] >= threshold,
-                "biz_id": r["metadata"].get("loan_id", ""),
-                "category": r["metadata"].get("cat_name", ""),
-                "business_type": r["metadata"].get("business_type", ""),
-                "similar_group": r["metadata"].get("similar_group", ""),
-                "path": r["metadata"].get("path", ""),
-            })
-
+    if not is_sign and not force_search:
         return {
             "filename": file.filename,
-            "category_id": cat_id,
-            "category_name": cat_name,
-            "sign_confidence": round(float(sign_conf), 4),
-            "is_sign_photo": bool(is_sign),
-            "all_scores": {k: round(float(v), 4) for k, v in sorted(scores.items(), key=lambda x: -x[1])},
-            "dynamic_threshold": {
-                "enabled": use_dynamic,
-                "fraud_threshold": dynt.get("fraud", 0) if use_dynamic else None,
-                "same_customer_threshold": dynt.get("same_customer", 0) if use_dynamic else None,
-            } if use_dynamic else None,
-            "similar_results": similar_results,
+            "category_id": category_id,
+            "category_name": category_name,
+            "is_sign_photo": False,
+            "sign_confidence": round(float(sign_confidence), 4),
+            "searched": False,
+            "message": "The image is not classified as a sign-photo; similarity search was skipped.",
+            "all_scores": {
+                name: round(float(score), 4)
+                for name, score in sorted(scores.items(), key=lambda item: -item[1])
+            },
+            "similar_results": [],
+            "risk_summary": summarize_risks([]),
         }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(500, f"检索失败: {str(e)}")
+
+    requested_top_k = top_k or int(config["app"].get("top_k", 5))
+    raw_results = searcher.search(encode_image(image_tensor)[0], top_k=requested_top_k + 5)
+    if not query_loan_id:
+        query_loan_id = auto_detect_loan_id(raw_results)
+
+    similar_results = []
+    for rank, item in enumerate(raw_results, start=1):
+        risk = assess_match(
+            score=float(item["score"]),
+            query_loan_id=query_loan_id,
+            metadata=item["metadata"],
+            loan_to_group=loan_to_group,
+            policy=risk_policy,
+        )
+        if risk["relation"] == "self":
+            continue
+
+        metadata = item["metadata"]
+        similar_results.append(
+            {
+                "rank": len(similar_results) + 1,
+                "raw_rank": rank,
+                "similarity": round(float(item["score"]), 4),
+                "threshold_applied": round(float(risk["threshold_used"]), 4),
+                "relationship": risk["relation"],
+                "relationship_label": risk["relation_label"],
+                "is_suspicious": risk["is_suspicious"],
+                "risk_level": risk["risk_level"],
+                "risk_type": risk["risk_type"],
+                "risk_type_label": risk["risk_type_label"],
+                "review_priority": risk["review_priority"],
+                "recommended_action": risk["recommended_action"],
+                "policy_version": risk["policy_version"],
+                "loan_id": metadata.get("loan_id", metadata.get("biz_id", "")),
+                "business_type": metadata.get("business_type", ""),
+                "similar_group": metadata.get("similar_group", ""),
+                "category": metadata.get("cat_name", ""),
+                "path": metadata.get("path", ""),
+            }
+        )
+        if len(similar_results) >= requested_top_k:
+            break
+
+    dynamic = config["retrieval"].get("dynamic_threshold", {})
+    return {
+        "filename": file.filename,
+        "model": config["model"]["name"],
+        "category_id": category_id,
+        "category_name": category_name,
+        "is_sign_photo": bool(is_sign),
+        "sign_confidence": round(float(sign_confidence), 4),
+        "searched": True,
+        "query_loan_id": query_loan_id,
+        "all_scores": {
+            name: round(float(score), 4)
+            for name, score in sorted(scores.items(), key=lambda item: -item[1])
+        },
+        "dynamic_threshold": {
+            "enabled": bool(dynamic.get("enabled", False)),
+            "cross_customer_threshold": risk_policy.cross_customer,
+            "same_customer_threshold": risk_policy.same_customer,
+            "default_threshold": risk_policy.default,
+        },
+        "risk_summary": summarize_risks(similar_results),
+        "similar_results": similar_results,
+    }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="启动 API 服务")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="监听地址")
-    parser.add_argument("--port", type=int, default=8000, help="监听端口")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Start the financial image similarity API.")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
-
-    print(f"启动 API 服务: http://{args.host}:{args.port}")
-    print(f"接口文档: http://{args.host}:{args.port}/docs")
     uvicorn.run(app, host=args.host, port=args.port)
 
 
