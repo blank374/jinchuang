@@ -10,7 +10,7 @@ from PIL import Image
 
 from mvp.inference import analyze_image, get_runtime, with_chinese_columns
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "outputs" / "mvp"
 
 st.set_page_config(page_title="金融影像风险检测", page_icon="search", layout="wide")

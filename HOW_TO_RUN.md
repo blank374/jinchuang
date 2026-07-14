@@ -25,7 +25,7 @@ Use this for experiment evidence: train/validation/test metrics, threshold analy
 
 ```powershell
 cd D:\GitHub\jinchuang
-F:\Environment\conda_envs\pytorch\python.exe -m streamlit run dashboard.py --server.address 127.0.0.1 --server.port 8501
+F:\Environment\conda_envs\pytorch\python.exe -m streamlit run experiments/dashboard.py --server.address 127.0.0.1 --server.port 8501
 ```
 
 Open:
@@ -49,6 +49,7 @@ The committed `outputs/mvp/` directory already contains experiment outputs. To r
 
 ```powershell
 cd D:\GitHub\jinchuang
-.\run_mvp.ps1
+.\experiments\run_mvp.ps1
 ```
 
+After the reorganization, experiment-only entry points live under `experiments/`. The business demo stays at the repository root.
