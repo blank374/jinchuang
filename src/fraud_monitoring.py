@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import json
+from collections import Counter
+from pathlib import Path
+
+import pandas as pd
+
+from src.risk_policy import ThresholdPolicy
+
+
+FRAUD_TYPE_LABELS = {
+    "cross_customer_fraud": "cross-customer suspected fraud",
+    "same_customer_repeat": "same-customer repeat submission",
+    "normal_low_risk": "normal low-risk candidate",
+}
+
+FRAUD_TYPE_LABELS_ZH = {
+    "cross_customer_fraud": "陌生人跨客户疑似欺诈",
+    "same_customer_repeat": "同客户重复提交",
+    "normal_low_risk": "低风险候选",
+}
+
+RELATION_LABELS_ZH = {
+    "self": "同一笔业务",
+    "same_customer": "同客户",
+    "cross_customer": "陌生人/跨客户",
+}
+
+RECOMMENDED_ACTIONS_ZH = {
+    "cross_customer_fraud": "进入反欺诈复核，重点核验身份、面签场景和贷款上下文。",
+    "same_customer_repeat": "进入运营/合规复核，确认是否为续贷、补件或重复提交。",
+    "normal_low_risk": "保留为审计证据，低优先级抽检。",
+}
+
+
+def pair_key(left: str, right: str) -> str:
+    return "::".join(sorted([str(left), str(right)]))
+
+
+def load_annotations(path: Path | str | None) -> pd.DataFrame:
+    if not path:
+        return pd.DataFrame()
+    annotation_path = Path(path)
+    if not annotation_path.exists():
+        return pd.DataFrame()
+    frame = pd.read_csv(annotation_path)
+    if "file_path" in frame.columns:
+        frame["dataset_loan_id"] = (
+            frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+        )
+    return frame
+
+
+def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
+    columns = ["dataset_loan_id", "business_loan_id", "business_type", "similar_group", "is_similar_pair"]
+    if annotations.empty or "image_type" not in annotations.columns:
+        return pd.DataFrame(columns=columns)
+
+    face = annotations[annotations["image_type"].eq("face_signing")].copy()
+    if face.empty:
+        return pd.DataFrame(columns=columns)
+    if "dataset_loan_id" not in face.columns:
+        face["dataset_loan_id"] = face.get("loan_id", "").astype(str)
+
+    result = pd.DataFrame(
+        {
+            "dataset_loan_id": face["dataset_loan_id"].astype(str),
+            "business_loan_id": face.get("loan_id", "").astype(str),
+            "business_type": face.get("business_type", "").fillna("").astype(str),
+            "similar_group": face.get("similar_group", "").fillna("").astype(str),
+            "is_similar_pair": face.get("is_similar_pair", 0),
+        }
+    )
+    return result.drop_duplicates("dataset_loan_id")
+
+
+def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> pd.DataFrame:
+    enriched = topk.copy()
+    enriched["pair_key"] = [pair_key(a, b) for a, b in zip(enriched["query_loan_id"], enriched["match_loan_id"])]
+    loans = face_business_frame(annotations)
+    if loans.empty:
+        for column in (
+            "query_business_loan_id",
+            "query_business_type",
+            "query_similar_group",
+            "match_business_loan_id",
+            "match_business_type",
+            "match_similar_group",
+        ):
+            enriched[column] = ""
+        return enriched
+
+    enriched = enriched.merge(
+        loans.add_prefix("query_"),
+        left_on="query_loan_id",
+        right_on="query_dataset_loan_id",
+        how="left",
+    )
+    enriched = enriched.merge(
+        loans.add_prefix("match_"),
+        left_on="match_loan_id",
+        right_on="match_dataset_loan_id",
+        how="left",
+    )
+    for column in (
+        "query_business_loan_id",
+        "query_business_type",
+        "query_similar_group",
+        "match_business_loan_id",
+        "match_business_type",
+        "match_similar_group",
+    ):
+        if column not in enriched.columns:
+            enriched[column] = ""
+        enriched[column] = enriched[column].fillna("").astype(str)
+    return enriched
+
+
+def infer_customer_relation(row: pd.Series) -> str:
+    if str(row.get("query_loan_id", "")) == str(row.get("match_loan_id", "")):
+        return "self"
+    query_group = str(row.get("query_similar_group", "") or "")
+    match_group = str(row.get("match_similar_group", "") or "")
+    if query_group and match_group and query_group == match_group:
+        return "same_customer"
+    return "cross_customer"
+
+
+def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
+    relation = infer_customer_relation(row)
+    score = float(row["cosine_similarity"])
+    if relation == "self":
+        threshold = 1.0
+    elif policy.enabled and relation == "same_customer":
+        threshold = policy.same_customer
+    elif policy.enabled:
+        threshold = policy.cross_customer
+    else:
+        threshold = policy.default
+
+    is_suspicious = bool(relation != "self" and score >= threshold)
+    if relation == "cross_customer" and is_suspicious:
+        fraud_type = "cross_customer_fraud"
+    elif relation == "same_customer" and is_suspicious:
+        fraud_type = "same_customer_repeat"
+    else:
+        fraud_type = "normal_low_risk"
+
+    if is_suspicious and score >= policy.high_risk:
+        risk_level = "high"
+        priority = "urgent"
+    elif is_suspicious and score >= policy.medium_risk:
+        risk_level = "medium"
+        priority = "standard"
+    elif is_suspicious:
+        risk_level = "low"
+        priority = "low"
+    else:
+        risk_level = "low"
+        priority = "low"
+
+    return {
+        "customer_relation": relation,
+        "customer_relation_label": RELATION_LABELS_ZH.get(relation, relation),
+        "monitor_threshold": threshold,
+        "is_suspicious": is_suspicious,
+        "fraud_type": fraud_type,
+        "fraud_type_label": FRAUD_TYPE_LABELS[fraud_type],
+        "fraud_type_label_zh": FRAUD_TYPE_LABELS_ZH[fraud_type],
+        "monitor_risk_level": risk_level,
+        "review_priority": priority,
+        "recommended_action_zh": RECOMMENDED_ACTIONS_ZH[fraud_type],
+    }
+
+
+def build_fraud_monitoring(topk: pd.DataFrame, annotations: pd.DataFrame, policy: ThresholdPolicy) -> pd.DataFrame:
+    if topk.empty:
+        return pd.DataFrame()
+
+    enriched = enrich_topk_with_business(topk, annotations)
+    enriched = (
+        enriched.sort_values(["cosine_similarity", "rank"], ascending=[False, True])
+        .drop_duplicates("pair_key")
+        .reset_index(drop=True)
+    )
+    assessments = pd.DataFrame([classify_monitoring_row(row, policy) for _, row in enriched.iterrows()])
+    result = pd.concat([enriched, assessments], axis=1)
+    result["score_gap_to_threshold"] = result["cosine_similarity"] - result["monitor_threshold"]
+    return result.sort_values(
+        ["is_suspicious", "monitor_risk_level", "cosine_similarity"],
+        ascending=[False, True, False],
+    ).reset_index(drop=True)
+
+
+def summarize_monitoring(frame: pd.DataFrame) -> dict:
+    if frame.empty:
+        return {
+            "total_pairs": 0,
+            "suspicious_pairs": 0,
+            "by_fraud_type": {},
+            "by_relation": {},
+            "by_priority": {},
+        }
+    suspicious = frame[frame["is_suspicious"]]
+    return {
+        "total_pairs": int(len(frame)),
+        "suspicious_pairs": int(len(suspicious)),
+        "by_fraud_type": dict(Counter(suspicious["fraud_type"])),
+        "by_relation": dict(Counter(frame["customer_relation"])),
+        "by_priority": dict(Counter(suspicious["review_priority"])),
+    }
+
+
+def write_monitoring_outputs(frame: pd.DataFrame, output_dir: Path, name: str = "fraud_monitoring") -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / f"{name}.csv"
+    summary_path = output_dir / f"{name}_summary.json"
+    frame.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    summary = summarize_monitoring(frame)
+    with summary_path.open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, ensure_ascii=False, indent=2)
+    return summary

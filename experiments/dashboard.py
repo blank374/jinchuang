@@ -14,6 +14,13 @@ OUTPUT = ROOT / "outputs" / "mvp"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.fraud_monitoring import (
+    build_fraud_monitoring,
+    load_annotations,
+    summarize_monitoring,
+)
+from src.risk_policy import ThresholdPolicy
+
 FIELD_LABELS = {
     "loan_id": "贷款编号",
     "query_loan_id": "查询贷款编号",
@@ -30,10 +37,23 @@ FIELD_LABELS = {
     "match_path": "匹配图片路径",
     "relative_path": "相对路径",
     "business_type": "业务类型",
+    "business_loan_id": "业务贷款号",
     "query_business_type": "查询贷款业务类型",
     "match_business_type": "匹配贷款业务类型",
     "official_similar": "官方标注相似",
     "split": "数据划分",
+    "customer_relation": "客户关系",
+    "customer_relation_label": "客户关系",
+    "monitor_threshold": "监测阈值",
+    "is_suspicious": "是否可疑",
+    "fraud_type": "监测类型",
+    "fraud_type_label_zh": "监测类型",
+    "monitor_risk_level": "监测风险等级",
+    "review_priority": "复核优先级",
+    "recommended_action_zh": "建议处置",
+    "score_gap_to_threshold": "超过阈值",
+    "query_business_loan_id": "查询业务贷款号",
+    "match_business_loan_id": "匹配业务贷款号",
 }
 
 
@@ -89,16 +109,22 @@ def load_data() -> dict:
     predictions = pd.read_csv(OUTPUT / "classification_predictions.csv")
     topk = pd.read_csv(OUTPUT / "topk_results.csv")
     thresholds = pd.read_csv(OUTPUT / "threshold_experiment.csv")
+    monitoring_path = OUTPUT / "fraud_monitoring.csv"
+    monitoring_summary_path = OUTPUT / "fraud_monitoring_summary.json"
+    monitoring = pd.read_csv(monitoring_path) if monitoring_path.exists() else pd.DataFrame()
+    monitoring_summary = read_json("fraud_monitoring_summary.json") if monitoring_summary_path.exists() else {}
     review_labels_path = OUTPUT / "review_labels.csv"
     review_labels = pd.read_csv(review_labels_path) if review_labels_path.exists() else pd.DataFrame()
     annotations_path = find_annotations_path(summary)
-    annotations = pd.read_csv(annotations_path) if annotations_path else pd.DataFrame()
+    annotations = load_annotations(annotations_path)
     return {
         "summary": summary,
         "metrics": metrics,
         "threshold_metadata": threshold_metadata,
         "predictions": predictions,
         "topk": topk,
+        "monitoring": monitoring,
+        "monitoring_summary": monitoring_summary,
         "thresholds": thresholds,
         "review_labels": review_labels,
         "annotations": annotations,
@@ -112,9 +138,20 @@ def pair_key(left: str, right: str) -> str:
 
 def loan_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
     if annotations.empty:
-        return pd.DataFrame(columns=["loan_id", "business_type", "similar_group"])
+        return pd.DataFrame(columns=["loan_id", "business_loan_id", "business_type", "similar_group"])
     face = annotations[annotations["image_type"].eq("face_signing")].copy()
-    return face[["loan_id", "business_type", "similar_group", "is_similar_pair"]].drop_duplicates("loan_id")
+    if "dataset_loan_id" not in face.columns:
+        face["dataset_loan_id"] = face["loan_id"]
+    result = pd.DataFrame(
+        {
+            "loan_id": face["dataset_loan_id"].astype(str),
+            "business_loan_id": face["loan_id"].astype(str),
+            "business_type": face["business_type"].fillna("").astype(str),
+            "similar_group": face["similar_group"].fillna("").astype(str),
+            "is_similar_pair": face["is_similar_pair"],
+        }
+    )
+    return result.drop_duplicates("loan_id")
 
 
 def enrich_topk(topk: pd.DataFrame, annotations: pd.DataFrame) -> pd.DataFrame:
@@ -160,10 +197,12 @@ def official_positive_pair_count(annotations: pd.DataFrame) -> int:
     face = annotations[
         annotations["image_type"].eq("face_signing")
         & annotations["similar_group"].fillna("").ne("")
-    ]
+    ].copy()
+    if "dataset_loan_id" not in face.columns:
+        face["dataset_loan_id"] = face["loan_id"]
     total = 0
     for _, group in face.groupby("similar_group"):
-        total += len(list(combinations(group["loan_id"].tolist(), 2)))
+        total += len(list(combinations(group["dataset_loan_id"].tolist(), 2)))
     return total
 
 
@@ -228,6 +267,18 @@ metrics = data["metrics"]
 threshold_metadata = data["threshold_metadata"]
 predictions = data["predictions"]
 topk = enrich_topk(data["topk"], data["annotations"])
+monitoring = data["monitoring"]
+if monitoring.empty:
+    policy = ThresholdPolicy(
+        enabled=True,
+        same_customer=float(summary.get("same_customer_threshold", 0.92)),
+        cross_customer=float(summary.get("cross_customer_threshold", 0.75)),
+        default=float(summary["high_risk_threshold"]),
+        high_risk=float(summary["high_risk_threshold"]),
+        medium_risk=float(summary["medium_risk_threshold"]),
+    )
+    monitoring = build_fraud_monitoring(data["topk"], data["annotations"], policy)
+monitoring_summary = data["monitoring_summary"] or summarize_monitoring(monitoring)
 thresholds = data["thresholds"]
 review_labels = data["review_labels"]
 annotations = data["annotations"]
@@ -261,8 +312,8 @@ st.caption(
     f'上次流水线耗时：{summary["elapsed_seconds"]} 秒 | 标注文件：{data["annotations_path"] or "未找到"}'
 )
 
-tab_upload, tab_overview, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
-    ["上传检测", "检测汇总", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
+tab_upload, tab_overview, tab_fraud, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
+    ["上传检测", "检测汇总", "欺诈监测", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
 )
 
 with tab_upload:
@@ -356,6 +407,78 @@ with tab_overview:
         ]
     )
     st.dataframe(eval_table, width="stretch", hide_index=True)
+
+with tab_fraud:
+    st.subheader("欺诈行为监测")
+    suspicious = monitoring[monitoring["is_suspicious"].astype(bool)].copy() if not monitoring.empty else pd.DataFrame()
+    fraud_counts = suspicious["fraud_type"].value_counts() if not suspicious.empty else pd.Series(dtype=int)
+    priority_counts = suspicious["review_priority"].value_counts() if not suspicious.empty else pd.Series(dtype=int)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("监测候选对", int(monitoring_summary.get("total_pairs", len(monitoring))))
+    c2.metric("可疑命中", int(monitoring_summary.get("suspicious_pairs", len(suspicious))))
+    c3.metric("跨客户欺诈", int(fraud_counts.get("cross_customer_fraud", 0)))
+    c4.metric("同客户重复", int(fraud_counts.get("same_customer_repeat", 0)))
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**按监测类型**")
+        if not suspicious.empty:
+            st.bar_chart(suspicious["fraud_type_label_zh"].value_counts())
+        else:
+            st.info("当前阈值下没有命中可疑监测记录。")
+    with right:
+        st.markdown("**按复核优先级**")
+        if not suspicious.empty:
+            st.bar_chart(priority_counts)
+        else:
+            st.info("暂无复核优先级统计。")
+
+    type_options = ["全部", "陌生人跨客户疑似欺诈", "同客户重复提交", "低风险候选"]
+    selected_type = st.selectbox("监测类型", type_options)
+    relation_options = ["全部"] + sorted(monitoring["customer_relation_label"].dropna().unique().tolist())
+    selected_relation = st.selectbox("客户关系", relation_options)
+    only_suspicious = st.checkbox("只看可疑命中", value=True)
+
+    fraud_view = monitoring.copy()
+    if only_suspicious:
+        fraud_view = fraud_view[fraud_view["is_suspicious"].astype(bool)]
+    if selected_type != "全部":
+        fraud_view = fraud_view[fraud_view["fraud_type_label_zh"].eq(selected_type)]
+    if selected_relation != "全部":
+        fraud_view = fraud_view[fraud_view["customer_relation_label"].eq(selected_relation)]
+    fraud_view = fraud_view.sort_values(["monitor_risk_level", "cosine_similarity"], ascending=[True, False])
+
+    columns = [
+        "query_loan_id",
+        "match_loan_id",
+        "query_business_loan_id",
+        "match_business_loan_id",
+        "cosine_similarity",
+        "monitor_threshold",
+        "score_gap_to_threshold",
+        "customer_relation_label",
+        "fraud_type_label_zh",
+        "monitor_risk_level",
+        "review_priority",
+        "recommended_action_zh",
+    ]
+    st.dataframe(with_chinese_columns(fraud_view[columns]), width="stretch", hide_index=True)
+
+    if not fraud_view.empty:
+        labels = [
+            f'{row.query_loan_id} ↔ {row.match_loan_id} | {row.cosine_similarity:.4f} | {row.fraud_type_label_zh}'
+            for row in fraud_view.itertuples()
+        ]
+        selected_label = st.selectbox("查看监测详情", labels)
+        row = fraud_view.iloc[labels.index(selected_label)]
+        left, right = st.columns(2)
+        with left:
+            st.image(row["query_path"], caption=f'查询：{row["query_loan_id"]} / {row.get("query_business_loan_id", "")}')
+        with right:
+            st.image(row["match_path"], caption=f'命中：{row["match_loan_id"]} / {row.get("match_business_loan_id", "")}')
+        st.markdown("**处置建议**")
+        st.info(row["recommended_action_zh"])
 
 with tab_risks:
     st.subheader("高相似可疑交易")

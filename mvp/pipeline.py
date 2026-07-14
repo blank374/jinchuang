@@ -15,6 +15,9 @@ from PIL import Image, ImageEnhance, ImageOps
 from torch import nn
 from transformers import AutoModel, AutoProcessor
 
+from src.fraud_monitoring import build_fraud_monitoring, load_annotations, write_monitoring_outputs
+from src.risk_policy import ThresholdPolicy
+
 IMAGE_TYPES = (
     "bank_statement",
     "contract",
@@ -35,6 +38,11 @@ def find_dataset_root(repo_root: Path) -> Path:
     if inner is None:
         raise FileNotFoundError(f"No dataset directory found under {outer}.")
     return inner
+
+
+def find_annotations_file(dataset_root: Path) -> Path | None:
+    candidate = dataset_root / "annotations.csv"
+    return candidate if candidate.exists() else None
 
 
 def choose_device(requested: str) -> torch.device:
@@ -371,10 +379,28 @@ def run(args: argparse.Namespace) -> None:
     risk_results = assign_risk(topk, best_threshold, medium_threshold)
     risk_results.to_csv(output_dir / "topk_results.csv", index=False, encoding="utf-8-sig")
 
+    annotations_path = find_annotations_file(dataset_root)
+    if annotations_path:
+        print("[6b/7] Building fraud monitoring report")
+        annotations = load_annotations(annotations_path)
+        policy = ThresholdPolicy(
+            enabled=True,
+            same_customer=args.same_customer_threshold,
+            cross_customer=args.cross_customer_threshold,
+            default=best_threshold,
+            high_risk=best_threshold,
+            medium_risk=medium_threshold,
+        )
+        monitoring = build_fraud_monitoring(risk_results, annotations, policy)
+        monitoring_summary = write_monitoring_outputs(monitoring, output_dir)
+    else:
+        monitoring_summary = {}
+
     summary = {
         "model_name": args.model_name,
         "device": str(device),
         "dataset_root": str(dataset_root),
+        "annotations_path": str(annotations_path) if annotations_path else "",
         "total_images": int(len(manifest)),
         "valid_images": int(len(valid)),
         "bad_images": int((manifest["status"] != "ok").sum()),
@@ -383,6 +409,9 @@ def run(args: argparse.Namespace) -> None:
         "top_k": args.top_k,
         "high_risk_threshold": best_threshold,
         "medium_risk_threshold": medium_threshold,
+        "cross_customer_threshold": args.cross_customer_threshold,
+        "same_customer_threshold": args.same_customer_threshold,
+        "fraud_monitoring_summary": monitoring_summary,
         "proxy_best_f1_threshold": proxy_threshold,
         "elapsed_seconds": round(time.time() - started, 2),
     }
@@ -404,6 +433,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--high-risk-threshold", type=float, default=DEFAULT_HIGH_RISK_THRESHOLD)
     parser.add_argument("--medium-risk-threshold", type=float, default=DEFAULT_MEDIUM_RISK_THRESHOLD)
+    parser.add_argument("--cross-customer-threshold", type=float, default=0.75)
+    parser.add_argument("--same-customer-threshold", type=float, default=0.92)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 

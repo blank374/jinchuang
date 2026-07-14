@@ -1,0 +1,17 @@
+{
+  "total_pairs": 254,
+  "suspicious_pairs": 254,
+  "by_fraud_type": {
+    "same_customer_repeat": 33,
+    "cross_customer_fraud": 221
+  },
+  "by_relation": {
+    "same_customer": 33,
+    "cross_customer": 221
+  },
+  "by_priority": {
+    "urgent": 33,
+    "low": 155,
+    "standard": 66
+  }
+}
