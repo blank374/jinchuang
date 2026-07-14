@@ -1,4 +1,9 @@
 __pycache__/
 *.py[cod]
 *.log
+*.pid
 ~$*
+.gradio/
+checkpoints/
+reports/
+remote-main-merge-worktree/

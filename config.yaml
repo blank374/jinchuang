@@ -1,0 +1,88 @@
+model:
+  # 主模型：用于影像分类、特征提取和相似度检索
+  name: "google/siglip2-base-patch16-224"
+  embedding_dim: 768
+  # 基线模型：用于论文/答辩中的对照说明
+  baseline_name: "openai/clip-vit-base-patch32"
+
+data:
+  image_size: 224
+  batch_size: 32
+  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"]
+
+retrieval:
+  index_path: "checkpoints/faiss_index.bin"
+  # dynamic_threshold.enabled=false 时使用的统一阈值
+  similarity_threshold: 0.97
+  high_risk_threshold: 0.97
+  medium_risk_threshold: 0.93
+  # flat 适合中小规模数据；ivf 适合 10 万级以上数据
+  index_type: "flat"
+  nlist: 100
+  dynamic_threshold:
+    enabled: true
+    # 跨客户命中更危险，采用较低阈值提高召回
+    fraud: 0.75
+    # 同客户续贷/复用更可能是正常业务，采用较高阈值减少误报
+    same_customer: 0.92
+
+preprocessing:
+  auto_rotate: true
+  enhance_contrast: true
+  face_detect: false
+  face_margin: 0.3
+  perspective_correct: true
+
+classifier:
+  categories:
+    - id: "sign_photo"
+      name: "面签照片"
+      prompts:
+        - "a photo of a person signing a document at a bank counter"
+        - "a person holding a pen signing a loan agreement"
+        - "a customer and bank employee during loan processing"
+    - id: "id_card"
+      name: "身份证"
+      prompts:
+        - "a photo of a Chinese national ID card"
+        - "a close-up of an identity document with portrait"
+        - "the front or back side of an ID card"
+    - id: "contract"
+      name: "合同"
+      prompts:
+        - "a scanned document page with text and signature"
+        - "a loan contract document with terms and conditions"
+    - id: "bank_statement"
+      name: "银行流水"
+      prompts:
+        - "a photo of a bank statement showing transaction records"
+        - "a financial statement with rows of numbers and dates"
+    - id: "other"
+      name: "其他"
+      prompts:
+        - "a photo of a financial receipt"
+        - "a photo of a certificate with seal"
+        - "a photo of a building or house exterior"
+
+training:
+  triplet_margin: 0.3
+  dual_margin:
+    enabled: true
+    m1: 0.3
+    m2: 0.8
+    sim_threshold: 0.85
+  epochs: 20
+  learning_rate: 0.0001
+  val_split: 0.2
+  # 冻结视觉语言模型 backbone，仅训练轻量 adapter / 分类头
+  freeze_backbone: true
+  augment_prob: 0.8
+  output_dir: "checkpoints/finetuned"
+
+app:
+  top_k: 5
+
+evaluate:
+  test_dir: "test_eval"
+  output_dir: "eval_results"
+  thresholds: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
