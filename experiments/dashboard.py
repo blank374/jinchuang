@@ -8,10 +8,41 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from mvp.inference import analyze_image, get_runtime, with_chinese_columns
-
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "outputs" / "mvp"
+
+FIELD_LABELS = {
+    "loan_id": "贷款编号",
+    "query_loan_id": "查询贷款编号",
+    "match_loan_id": "匹配贷款编号",
+    "image_type": "原始影像类别",
+    "predicted_type": "预测影像类别",
+    "predicted_type_label": "预测影像类别（中文）",
+    "confidence": "分类置信度",
+    "cosine_similarity": "余弦相似度",
+    "risk_level": "风险等级",
+    "risk_level_label": "风险等级（中文）",
+    "rank": "相似度排名",
+    "query_path": "查询图片路径",
+    "match_path": "匹配图片路径",
+    "relative_path": "相对路径",
+    "business_type": "业务类型",
+    "query_business_type": "查询贷款业务类型",
+    "match_business_type": "匹配贷款业务类型",
+    "official_similar": "官方标注相似",
+    "split": "数据划分",
+}
+
+
+def with_chinese_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {column: FIELD_LABELS.get(column, column) for column in frame.columns}
+    return frame.rename(columns=rename_map)
+
+
+def load_inference_functions():
+    from mvp.inference import analyze_image, get_runtime
+
+    return analyze_image, get_runtime
 
 st.set_page_config(page_title="金融影像风险检测", page_icon="search", layout="wide")
 
@@ -180,6 +211,7 @@ def save_review_label(query_loan_id: str, match_loan_id: str, is_similar: int, n
 
 @st.cache_resource(show_spinner=False)
 def load_runtime(output_dir: str):
+    _, get_runtime = load_inference_functions()
     return get_runtime(output_dir)
 
 
@@ -238,6 +270,7 @@ with tab_upload:
         st.image(image, caption="上传影像", width=360)
         if st.button("开始检测", type="primary"):
             with st.spinner("正在加载模型并检测..."):
+                analyze_image, _ = load_inference_functions()
                 runtime = load_runtime(str(OUTPUT))
                 result = analyze_image(image, runtime, top_k=int(top_k), force_search=force_search)
 
