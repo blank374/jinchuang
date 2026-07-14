@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import sys
 from itertools import combinations
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "outputs" / "mvp"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 FIELD_LABELS = {
     "loan_id": "贷款编号",
@@ -118,18 +121,22 @@ def enrich_topk(topk: pd.DataFrame, annotations: pd.DataFrame) -> pd.DataFrame:
     loans = loan_business_frame(annotations)
     enriched = topk.copy()
     enriched["pair_key"] = [pair_key(a, b) for a, b in zip(enriched["query_loan_id"], enriched["match_loan_id"])]
-    enriched = enriched.merge(
-        loans.add_prefix("query_"),
-        left_on="query_loan_id",
-        right_on="query_loan_id",
-        how="left",
-    )
-    enriched = enriched.merge(
-        loans.add_prefix("match_"),
-        left_on="match_loan_id",
-        right_on="match_loan_id",
-        how="left",
-    )
+    if not loans.empty:
+        enriched = enriched.merge(
+            loans.add_prefix("query_"),
+            left_on="query_loan_id",
+            right_on="query_loan_id",
+            how="left",
+        )
+        enriched = enriched.merge(
+            loans.add_prefix("match_"),
+            left_on="match_loan_id",
+            right_on="match_loan_id",
+            how="left",
+        )
+    for column in ("query_similar_group", "match_similar_group", "query_business_type", "match_business_type"):
+        if column not in enriched.columns:
+            enriched[column] = ""
     enriched["official_similar"] = (
         enriched["query_similar_group"].fillna("").ne("")
         & enriched["query_similar_group"].eq(enriched["match_similar_group"])
