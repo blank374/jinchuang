@@ -9,6 +9,8 @@ import numpy as np
 class ImageClassifier:
     """基于 CLIP 的零样本影像分类器（面签照片/身份证/权证/合同/其他）"""
 
+    SIGN_ALIASES = {"sign_photo", "face_signing", "face_sign", "signing_photo", "面签照片", "面签照"}
+
     def __init__(self, model, processor, categories: list[dict], device="cpu"):
         """
         Args:
@@ -65,6 +67,23 @@ class ImageClassifier:
 
         self.text_features = torch.cat(cat_features, dim=0)  # [num_cats, D]
 
+    @classmethod
+    def _normalize_label(cls, value) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    @classmethod
+    def is_sign_label(cls, value) -> bool:
+        """兼容配置、数据集和索引中不同格式的面签类别写法。"""
+        normalized = cls._normalize_label(value)
+        aliases = {cls._normalize_label(alias) for alias in cls.SIGN_ALIASES}
+        return normalized in aliases
+
+    def sign_category(self):
+        for cat in self.categories:
+            if self.is_sign_label(cat.get("id")) or self.is_sign_label(cat.get("name")):
+                return cat
+        return None
+
     def classify(self, image_tensor: torch.Tensor):
         """对单张图片进行零样本分类
 
@@ -77,6 +96,7 @@ class ImageClassifier:
             scores: 各类别相似度分数 dict {cat_name: score}
         """
         with torch.no_grad():
+            image_tensor = image_tensor.to(self.device)
             image_features = self.model.get_image_features(pixel_values=image_tensor)
             if not isinstance(image_features, torch.Tensor):
                 image_features = image_features.pooler_output
@@ -107,8 +127,11 @@ class ImageClassifier:
             confidence: float (面签类别的相似度分数)
         """
         cat_id, cat_name, scores = self.classify(image_tensor)
-        sign_score = scores.get("面签照片", 0.0)
-        return cat_id == "sign_photo", sign_score
+        sign_cat = self.sign_category()
+        sign_score = 0.0
+        if sign_cat:
+            sign_score = scores.get(sign_cat.get("name"), scores.get(sign_cat.get("id"), 0.0))
+        return self.is_sign_label(cat_id) or self.is_sign_label(cat_name), sign_score
 
 
 # 简单测试

@@ -122,6 +122,24 @@ def auto_detect_loan_id(results):
     return ""
 
 
+def metadata_is_sign_photo(metadata: dict) -> bool:
+    """根据索引元数据判断是否为面签照。"""
+    sign_fields = ("image_type", "cat_id", "cat_name", "category_id", "category_name", "predicted_type", "label")
+    return any(classifier.is_sign_label(metadata.get(field)) for field in sign_fields)
+
+
+def metadata_category_name(metadata: dict, fallback: str) -> str:
+    """兼容索引和实验 CSV 中不同字段名的类别信息。"""
+    return (
+        metadata.get("cat_name")
+        or metadata.get("category_name")
+        or metadata.get("image_type")
+        or metadata.get("predicted_type")
+        or metadata.get("label")
+        or fallback
+    )
+
+
 def predict(image, query_loan_id="", review_threshold=None, force_search=True):
     try:
         if image is None:
@@ -133,8 +151,36 @@ def predict(image, query_loan_id="", review_threshold=None, force_search=True):
         img_tensor = extractor.preprocess(image)
 
         # 2. 影像分类
-        _, cat_name, scores = classifier.classify(img_tensor)
+        cat_id, cat_name, scores = classifier.classify(img_tensor)
         is_sign, sign_confidence = classifier.is_sign_photo(img_tensor)
+
+        # 3. 提取特征并检索。分类器是零样本 prompt，历史图优先用索引元数据校正。
+        with torch.no_grad():
+            feat = extractor.extract(img_tensor)
+        feat_np = feat.cpu().numpy().astype(np.float32)
+        feat_norm = np.linalg.norm(feat_np)
+        if feat_norm > 0:
+            feat_np = feat_np / feat_norm
+
+        top_k = config["app"]["top_k"]
+        results = searcher.search(feat_np[0], top_k=top_k + 5)
+
+        correction_note = ""
+        if results and results[0]["score"] >= 0.98:
+            top_meta = results[0]["metadata"]
+            indexed_cat_name = metadata_category_name(top_meta, cat_name)
+            indexed_is_sign = metadata_is_sign_photo(top_meta)
+            if indexed_cat_name and (indexed_cat_name != cat_name or indexed_is_sign != is_sign):
+                correction_note = (
+                    f"\n\n【历史索引校正】\n"
+                    f"  原零样本分类: {cat_name}\n"
+                    f"  索引命中类别: {indexed_cat_name}\n"
+                    f"  命中相似度: {results[0]['score']:.4f}"
+                )
+                cat_name = indexed_cat_name
+                is_sign = indexed_is_sign
+                if is_sign:
+                    sign_confidence = max(sign_confidence, float(results[0]["score"]))
 
         # 格式化分类结果
         scores_str = "\n".join([f"  {k}: {v:.3f}" for k, v in sorted(scores.items(), key=lambda x: -x[1])])
@@ -143,9 +189,10 @@ def predict(image, query_loan_id="", review_threshold=None, force_search=True):
             f"  预测类别: {cat_name}\n"
             f"  面签置信度: {sign_confidence:.3f}\n\n"
             f"【各类别得分】\n{scores_str}"
+            f"{correction_note}"
         )
 
-        # 3. 如果不是面签照片，不进行相似度检测
+        # 4. 如果不是面签照片，不进行相似度检测
         if not is_sign and not force_search:
             return (
                 classification_info + "\n\n图片不是面签照片，跳过相似度检测。",
@@ -154,20 +201,8 @@ def predict(image, query_loan_id="", review_threshold=None, force_search=True):
                 f"非面签照片: {cat_name}",
             )
 
-        # 4. 提取特征
         if force_search and not is_sign:
             classification_info += "\n\n提示：模型未判定为面签照片，但已按勾选项强制进入相似度检索。"
-
-        with torch.no_grad():
-            feat = extractor.extract(img_tensor)
-        feat_np = feat.cpu().numpy().astype(np.float32)
-        feat_norm = np.linalg.norm(feat_np)
-        if feat_norm > 0:
-            feat_np = feat_np / feat_norm
-
-        # 5. 检索相似（多取 top_k+5 条，为 Gallery 去重留缓冲）
-        top_k = config["app"]["top_k"]
-        results = searcher.search(feat_np[0], top_k=top_k + 5)
 
         # 5b. 自动识别贷款ID（如未手动输入，且原图已在索引中）
         if not query_loan_id:
@@ -317,6 +352,24 @@ def batch_predict(images, query_loan_id=""):
 
             _, cat_name, _ = classifier.classify(img_tensor)
             is_sign, sign_conf = classifier.is_sign_photo(img_tensor)
+
+            with torch.no_grad():
+                feat = extractor.extract(img_tensor)
+            feat_np = feat.cpu().numpy().astype(np.float32)
+            feat_norm = np.linalg.norm(feat_np)
+            if feat_norm > 0:
+                feat_np = feat_np / feat_norm
+
+            results = searcher.search(feat_np[0], top_k=config["app"]["top_k"] + 5)
+            if results and results[0]["score"] >= 0.98:
+                top_meta = results[0]["metadata"]
+                indexed_cat_name = metadata_category_name(top_meta, cat_name)
+                indexed_is_sign = metadata_is_sign_photo(top_meta)
+                if indexed_cat_name and (indexed_cat_name != cat_name or indexed_is_sign != is_sign):
+                    cat_name = indexed_cat_name
+                    is_sign = indexed_is_sign
+                    if is_sign:
+                        sign_conf = max(sign_conf, float(results[0]["score"]))
         except Exception as e:
             rows.append({"类别": f"处理失败: {e}", "面签置信度": "-", "是否面签": "否", "最高相似度": "-", "判定结果": f"错误: {e}", "相似业务ID": ""})
             continue
@@ -328,16 +381,6 @@ def batch_predict(images, query_loan_id=""):
         }
 
         if is_sign:
-            # 提取特征
-            with torch.no_grad():
-                feat = extractor.extract(img_tensor)
-            feat_np = feat.cpu().numpy().astype(np.float32)
-            feat_norm = np.linalg.norm(feat_np)
-            if feat_norm > 0:
-                feat_np = feat_np / feat_norm
-
-            results = searcher.search(feat_np[0], top_k=config["app"]["top_k"])
-
             # 自动识别本张图片的贷款ID
             img_loan_id = query_loan_id
             if not img_loan_id:
