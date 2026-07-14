@@ -1,9 +1,9 @@
 {
   "total_pairs": 254,
-  "suspicious_pairs": 254,
+  "suspicious_pairs": 44,
   "by_fraud_type": {
     "same_customer_repeat": 33,
-    "cross_customer_fraud": 221
+    "cross_customer_fraud": 11
   },
   "by_relation": {
     "same_customer": 33,
@@ -11,7 +11,15 @@
   },
   "by_priority": {
     "urgent": 33,
-    "low": 155,
-    "standard": 66
-  }
+    "standard": 11
+  },
+  "by_fraud_score_level": {
+    "critical": 28,
+    "high": 15,
+    "medium": 1
+  },
+  "risk_cluster_count": 15,
+  "max_risk_cluster_size": 9,
+  "cross_business_suspicious": 29,
+  "critical_alerts": 28
 }

@@ -33,6 +33,13 @@ RECOMMENDED_ACTIONS_ZH = {
     "normal_low_risk": "保留为审计证据，低优先级抽检。",
 }
 
+FRAUD_SCORE_LEVELS_ZH = {
+    "critical": "极高",
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+}
+
 
 def pair_key(left: str, right: str) -> str:
     return "::".join(sorted([str(left), str(right)]))
@@ -174,6 +181,117 @@ def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
     }
 
 
+def _find(parent: dict[str, str], item: str) -> str:
+    parent.setdefault(item, item)
+    if parent[item] != item:
+        parent[item] = _find(parent, parent[item])
+    return parent[item]
+
+
+def _union(parent: dict[str, str], left: str, right: str) -> None:
+    left_root = _find(parent, left)
+    right_root = _find(parent, right)
+    if left_root != right_root:
+        parent[right_root] = left_root
+
+
+def add_fraud_graph_features(frame: pd.DataFrame) -> pd.DataFrame:
+    result = frame.copy()
+    if result.empty:
+        return result
+
+    suspicious = result[result["is_suspicious"].astype(bool)]
+    degree = Counter()
+    parent: dict[str, str] = {}
+    for row in suspicious.itertuples():
+        left = str(row.query_loan_id)
+        right = str(row.match_loan_id)
+        degree[left] += 1
+        degree[right] += 1
+        _union(parent, left, right)
+
+    component_members: dict[str, set[str]] = {}
+    for loan_id in degree:
+        root = _find(parent, loan_id)
+        component_members.setdefault(root, set()).add(loan_id)
+
+    component_ids = {root: f"RISK_CLUSTER_{index:03d}" for index, root in enumerate(sorted(component_members), start=1)}
+    component_sizes = {root: len(members) for root, members in component_members.items()}
+
+    query_degree = []
+    match_degree = []
+    cluster_id = []
+    cluster_size = []
+    cross_business_scene = []
+    fraud_scores = []
+    score_levels = []
+    innovation_tags = []
+
+    for row in result.itertuples():
+        query = str(row.query_loan_id)
+        match = str(row.match_loan_id)
+        query_degree.append(int(degree.get(query, 0)))
+        match_degree.append(int(degree.get(match, 0)))
+
+        if bool(row.is_suspicious):
+            root = _find(parent, query)
+            cluster_id.append(component_ids.get(root, ""))
+            cluster_size.append(int(component_sizes.get(root, 1)))
+        else:
+            cluster_id.append("")
+            cluster_size.append(0)
+
+        query_business = str(getattr(row, "query_business_type", "") or "")
+        match_business = str(getattr(row, "match_business_type", "") or "")
+        is_cross_business = bool(query_business and match_business and query_business != match_business)
+        cross_business_scene.append(is_cross_business)
+
+        threshold = float(row.monitor_threshold) if float(row.monitor_threshold) > 0 else 1.0
+        normalized_margin = max(0.0, (float(row.cosine_similarity) - threshold) / max(1.0 - threshold, 1e-6))
+        relation_bonus = 0.18 if row.customer_relation == "cross_customer" else 0.08 if row.customer_relation == "same_customer" else 0.0
+        business_bonus = 0.06 if is_cross_business else 0.0
+        graph_bonus = min(0.18, 0.04 * max(degree.get(query, 0), degree.get(match, 0)))
+        cluster_bonus = min(0.12, 0.02 * max(cluster_size[-1] - 2, 0))
+        score = min(1.0, 0.52 * float(row.cosine_similarity) + 0.24 * normalized_margin + relation_bonus + business_bonus + graph_bonus + cluster_bonus)
+        if not bool(row.is_suspicious):
+            score = min(score, 0.49)
+        fraud_scores.append(round(score, 4))
+
+        if score >= 0.90:
+            level = "critical"
+        elif score >= 0.78:
+            level = "high"
+        elif score >= 0.60:
+            level = "medium"
+        else:
+            level = "low"
+        score_levels.append(level)
+
+        tags = []
+        if row.customer_relation == "cross_customer" and bool(row.is_suspicious):
+            tags.append("跨客户高相似")
+        if row.customer_relation == "same_customer" and bool(row.is_suspicious):
+            tags.append("同客户重复")
+        if is_cross_business:
+            tags.append("跨产品复用")
+        if cluster_size[-1] >= 3:
+            tags.append("风险关系簇")
+        if max(degree.get(query, 0), degree.get(match, 0)) >= 3:
+            tags.append("高连接节点")
+        innovation_tags.append("、".join(tags) if tags else "常规相似候选")
+
+    result["query_risk_degree"] = query_degree
+    result["match_risk_degree"] = match_degree
+    result["risk_cluster_id"] = cluster_id
+    result["risk_cluster_size"] = cluster_size
+    result["cross_business_scene"] = cross_business_scene
+    result["fraud_score"] = fraud_scores
+    result["fraud_score_level"] = score_levels
+    result["fraud_score_level_zh"] = [FRAUD_SCORE_LEVELS_ZH[level] for level in score_levels]
+    result["innovation_tags"] = innovation_tags
+    return result
+
+
 def build_fraud_monitoring(topk: pd.DataFrame, annotations: pd.DataFrame, policy: ThresholdPolicy) -> pd.DataFrame:
     if topk.empty:
         return pd.DataFrame()
@@ -187,9 +305,10 @@ def build_fraud_monitoring(topk: pd.DataFrame, annotations: pd.DataFrame, policy
     assessments = pd.DataFrame([classify_monitoring_row(row, policy) for _, row in enriched.iterrows()])
     result = pd.concat([enriched, assessments], axis=1)
     result["score_gap_to_threshold"] = result["cosine_similarity"] - result["monitor_threshold"]
+    result = add_fraud_graph_features(result)
     return result.sort_values(
-        ["is_suspicious", "monitor_risk_level", "cosine_similarity"],
-        ascending=[False, True, False],
+        ["is_suspicious", "fraud_score", "monitor_risk_level", "cosine_similarity"],
+        ascending=[False, False, True, False],
     ).reset_index(drop=True)
 
 
@@ -203,12 +322,18 @@ def summarize_monitoring(frame: pd.DataFrame) -> dict:
             "by_priority": {},
         }
     suspicious = frame[frame["is_suspicious"]]
+    clusters = suspicious[suspicious.get("risk_cluster_id", "").astype(str).ne("")] if not suspicious.empty else suspicious
     return {
         "total_pairs": int(len(frame)),
         "suspicious_pairs": int(len(suspicious)),
         "by_fraud_type": dict(Counter(suspicious["fraud_type"])),
         "by_relation": dict(Counter(frame["customer_relation"])),
         "by_priority": dict(Counter(suspicious["review_priority"])),
+        "by_fraud_score_level": dict(Counter(suspicious.get("fraud_score_level", []))),
+        "risk_cluster_count": int(clusters["risk_cluster_id"].nunique()) if not clusters.empty else 0,
+        "max_risk_cluster_size": int(clusters["risk_cluster_size"].max()) if not clusters.empty else 0,
+        "cross_business_suspicious": int(suspicious.get("cross_business_scene", pd.Series(dtype=bool)).sum()),
+        "critical_alerts": int((suspicious.get("fraud_score", pd.Series(dtype=float)) >= 0.90).sum()),
     }
 
 

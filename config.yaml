@@ -21,9 +21,9 @@ retrieval:
   nlist: 100
   dynamic_threshold:
     enabled: true
-    # 跨客户命中更危险，采用较低阈值提高召回
-    fraud: 0.75
-    # 同客户续贷/复用更可能是正常业务，采用较高阈值减少误报
+    # 跨客户欺诈命中必须更严格，达到高相似度后进入反欺诈复核
+    fraud: 0.95
+    # 同客户续贷/复用更偏运营复核，阈值略低于跨客户欺诈
     same_customer: 0.92
 
 preprocessing:

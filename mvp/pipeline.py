@@ -433,7 +433,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--high-risk-threshold", type=float, default=DEFAULT_HIGH_RISK_THRESHOLD)
     parser.add_argument("--medium-risk-threshold", type=float, default=DEFAULT_MEDIUM_RISK_THRESHOLD)
-    parser.add_argument("--cross-customer-threshold", type=float, default=0.75)
+    parser.add_argument("--cross-customer-threshold", type=float, default=0.95)
     parser.add_argument("--same-customer-threshold", type=float, default=0.92)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()

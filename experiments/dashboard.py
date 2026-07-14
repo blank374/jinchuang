@@ -54,7 +54,26 @@ FIELD_LABELS = {
     "score_gap_to_threshold": "超过阈值",
     "query_business_loan_id": "查询业务贷款号",
     "match_business_loan_id": "匹配业务贷款号",
+    "fraud_score": "综合欺诈分",
+    "fraud_score_level_zh": "综合风险",
+    "risk_cluster_id": "风险关系簇",
+    "risk_cluster_size": "簇内业务数",
+    "query_risk_degree": "查询节点连接数",
+    "match_risk_degree": "匹配节点连接数",
+    "cross_business_scene": "是否跨产品",
+    "innovation_tags": "创新监测标签",
 }
+
+FRAUD_MONITORING_REQUIRED_COLUMNS = [
+    "fraud_score",
+    "fraud_score_level_zh",
+    "risk_cluster_id",
+    "risk_cluster_size",
+    "query_risk_degree",
+    "match_risk_degree",
+    "cross_business_scene",
+    "innovation_tags",
+]
 
 
 def with_chinese_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -268,17 +287,19 @@ threshold_metadata = data["threshold_metadata"]
 predictions = data["predictions"]
 topk = enrich_topk(data["topk"], data["annotations"])
 monitoring = data["monitoring"]
-if monitoring.empty:
+if monitoring.empty or any(column not in monitoring.columns for column in FRAUD_MONITORING_REQUIRED_COLUMNS):
     policy = ThresholdPolicy(
         enabled=True,
         same_customer=float(summary.get("same_customer_threshold", 0.92)),
-        cross_customer=float(summary.get("cross_customer_threshold", 0.75)),
+        cross_customer=float(summary.get("cross_customer_threshold", 0.95)),
         default=float(summary["high_risk_threshold"]),
         high_risk=float(summary["high_risk_threshold"]),
         medium_risk=float(summary["medium_risk_threshold"]),
     )
     monitoring = build_fraud_monitoring(data["topk"], data["annotations"], policy)
-monitoring_summary = data["monitoring_summary"] or summarize_monitoring(monitoring)
+    monitoring_summary = summarize_monitoring(monitoring)
+else:
+    monitoring_summary = data["monitoring_summary"] or summarize_monitoring(monitoring)
 thresholds = data["thresholds"]
 review_labels = data["review_labels"]
 annotations = data["annotations"]
@@ -420,6 +441,12 @@ with tab_fraud:
     c3.metric("跨客户欺诈", int(fraud_counts.get("cross_customer_fraud", 0)))
     c4.metric("同客户重复", int(fraud_counts.get("same_customer_repeat", 0)))
 
+    g1, g2, g3, g4 = st.columns(4)
+    g1.metric("风险关系簇", int(monitoring_summary.get("risk_cluster_count", 0)))
+    g2.metric("最大簇业务数", int(monitoring_summary.get("max_risk_cluster_size", 0)))
+    g3.metric("跨产品可疑", int(monitoring_summary.get("cross_business_suspicious", 0)))
+    g4.metric("极高欺诈分", int(monitoring_summary.get("critical_alerts", 0)))
+
     left, right = st.columns(2)
     with left:
         st.markdown("**按监测类型**")
@@ -456,14 +483,23 @@ with tab_fraud:
         "match_business_loan_id",
         "cosine_similarity",
         "monitor_threshold",
+        "fraud_score",
+        "fraud_score_level_zh",
         "score_gap_to_threshold",
         "customer_relation_label",
         "fraud_type_label_zh",
+        "risk_cluster_id",
+        "risk_cluster_size",
+        "query_risk_degree",
+        "match_risk_degree",
+        "cross_business_scene",
+        "innovation_tags",
         "monitor_risk_level",
         "review_priority",
         "recommended_action_zh",
     ]
-    st.dataframe(with_chinese_columns(fraud_view[columns]), width="stretch", hide_index=True)
+    available_columns = [column for column in columns if column in fraud_view.columns]
+    st.dataframe(with_chinese_columns(fraud_view[available_columns]), width="stretch", hide_index=True)
 
     if not fraud_view.empty:
         labels = [
@@ -477,6 +513,14 @@ with tab_fraud:
             st.image(row["query_path"], caption=f'查询：{row["query_loan_id"]} / {row.get("query_business_loan_id", "")}')
         with right:
             st.image(row["match_path"], caption=f'命中：{row["match_loan_id"]} / {row.get("match_business_loan_id", "")}')
+        detail_cols = st.columns(4)
+        fraud_score = float(row.get("fraud_score", 0.0) or 0.0)
+        detail_cols[0].metric("综合欺诈分", f"{fraud_score:.4f}" if fraud_score else "-")
+        detail_cols[1].metric("风险关系簇", row.get("risk_cluster_id", "") or "-")
+        detail_cols[2].metric("簇内业务数", int(row.get("risk_cluster_size", 0)))
+        is_cross_business = str(row.get("cross_business_scene", False)).lower() in {"true", "1", "yes"}
+        detail_cols[3].metric("跨产品", "是" if is_cross_business else "否")
+        st.write(f'创新监测标签：**{row.get("innovation_tags", "")}**')
         st.markdown("**处置建议**")
         st.info(row["recommended_action_zh"])
 
