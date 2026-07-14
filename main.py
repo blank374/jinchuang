@@ -122,7 +122,7 @@ def auto_detect_loan_id(results):
     return ""
 
 
-def predict(image, query_loan_id="", review_threshold=None):
+def predict(image, query_loan_id="", review_threshold=None, force_search=True):
     try:
         if image is None:
             return "请上传图片", None, None, "等待检测..."
@@ -146,7 +146,7 @@ def predict(image, query_loan_id="", review_threshold=None):
         )
 
         # 3. 如果不是面签照片，不进行相似度检测
-        if not is_sign:
+        if not is_sign and not force_search:
             return (
                 classification_info + "\n\n图片不是面签照片，跳过相似度检测。",
                 None,
@@ -155,6 +155,9 @@ def predict(image, query_loan_id="", review_threshold=None):
             )
 
         # 4. 提取特征
+        if force_search and not is_sign:
+            classification_info += "\n\n提示：模型未判定为面签照片，但已按勾选项强制进入相似度检索。"
+
         with torch.no_grad():
             feat = extractor.extract(img_tensor)
         feat_np = feat.cpu().numpy().astype(np.float32)
@@ -505,4 +508,4 @@ with gr.Blocks(title="金融影像智能相似度检测", theme=gr.themes.Soft()
     )
 
 if __name__ == "__main__":
-    demo.launch(share=False)
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
