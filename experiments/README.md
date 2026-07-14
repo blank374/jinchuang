@@ -1,9 +1,8 @@
-# Experiments
+# 实验目录
 
-This directory contains experiment-only entry points.
+本目录只放实验相关入口，用于支撑技术报告、阈值分析和模型效果展示。
 
-- `dashboard.py`: Streamlit dashboard for MVP metrics, threshold analysis, suspicious pairs, and train/validation/test evidence.
-- `run_mvp.ps1`: rebuilds the MVP experiment outputs under `outputs/mvp/`.
+- `dashboard.py`：Streamlit 实验看板，展示 MVP 指标、阈值实验、高相似可疑交易，以及训练集/验证集/测试集结果。
+- `run_mvp.ps1`：重新生成 `outputs/mvp/` 下的 MVP 实验产物。
 
-The final business demo remains at the repository root in `main.py`.
-
+最终业务演示入口仍保留在仓库根目录的 `main.py`。
