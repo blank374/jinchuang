@@ -8,6 +8,12 @@
 
 比赛数据中的 `similar_group` 是脱敏后的 Ground Truth，仅用于离线统计 Precision、Recall、F1 和阈值校准，绝不作为 API、Gradio 或生产规则的输入字段。这样可避免标签泄漏。
 
+### 身份证主键补充
+
+当业务主数据暂未提供 `customer_id` 时，可用身份证正面走轻量 RapidOCR：提取并校验身份证号码后立刻生成加盐 `customer_id_hash`，只把哈希写入 `customer_identity_map.csv`。该映射通过 `--identity-map` 接入 MVP；哈希相同为同客户，哈希不同才可确认跨客户。OCR 失败的影像保留为待核验，不做强行归类。
+
+比赛模拟数据可能使用不符合真实身份证校验位的号码。仅在比赛/演示环境，可以对 `build_identity_map.py` 使用 `--allow-format-only-id`；输出会标为 `matched_format_only`，表示“格式级弱身份依据”。生产环境必须保持默认严格校验，并优先使用核心业务的客户主键。
+
 | 阈值 | 作用 | 准确率 / 召回率 / 人工成本影响 |
 |---|---|---|
 | 0.97 high risk | 高置信自动升级、紧急复核 | 精确率最高，召回较低，人工成本最低 |

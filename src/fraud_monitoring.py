@@ -63,8 +63,21 @@ def load_annotations(path: Path | str | None) -> pd.DataFrame:
     return frame
 
 
+def attach_customer_identity(annotations: pd.DataFrame, identity_map_path: Path | str | None) -> pd.DataFrame:
+    """Attach a hashed customer key; raw ID numbers are never accepted here."""
+    if annotations.empty or not identity_map_path or not Path(identity_map_path).exists():
+        return annotations
+    identity_map = pd.read_csv(identity_map_path, dtype=str).fillna("")
+    required = {"dataset_loan_id", "customer_id_hash"}
+    if not required.issubset(identity_map.columns):
+        raise ValueError(f"Identity map must include {sorted(required)}")
+    keep = ["dataset_loan_id", "customer_id_hash"] + (["status"] if "status" in identity_map.columns else [])
+    identity_map = identity_map[keep].drop_duplicates("dataset_loan_id").rename(columns={"customer_id_hash": "customer_id", "status": "customer_id_status"})
+    return annotations.merge(identity_map, on="dataset_loan_id", how="left")
+
+
 def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
-    columns = ["dataset_loan_id", "business_loan_id", "business_type", "customer_id", "similar_group", "is_similar_pair"]
+    columns = ["dataset_loan_id", "business_loan_id", "business_type", "customer_id", "customer_id_status", "similar_group", "is_similar_pair"]
     if annotations.empty or "image_type" not in annotations.columns:
         return pd.DataFrame(columns=columns)
 
@@ -83,6 +96,7 @@ def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
             "business_loan_id": face.get("loan_id", "").astype(str),
             "business_type": face.get("business_type", "").fillna("").astype(str),
             "customer_id": customer_values.fillna("").astype(str),
+            "customer_id_status": face.get("customer_id_status", pd.Series("", index=face.index)).fillna("").astype(str),
             "similar_group": face.get("similar_group", "").fillna("").astype(str),
             "is_similar_pair": face.get("is_similar_pair", 0),
         }
@@ -99,10 +113,12 @@ def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> 
             "query_business_loan_id",
             "query_business_type",
             "query_customer_id",
+            "query_customer_id_status",
             "query_similar_group",
             "match_business_loan_id",
             "match_business_type",
             "match_customer_id",
+            "match_customer_id_status",
             "match_similar_group",
         ):
             enriched[column] = ""
@@ -124,10 +140,12 @@ def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> 
         "query_business_loan_id",
         "query_business_type",
         "query_customer_id",
+        "query_customer_id_status",
         "query_similar_group",
         "match_business_loan_id",
         "match_business_type",
         "match_customer_id",
+        "match_customer_id_status",
         "match_similar_group",
     ):
         if column not in enriched.columns:
@@ -142,7 +160,9 @@ def infer_customer_relation(row: pd.Series) -> tuple[str, str]:
     query_customer = str(row.get("query_customer_id", "") or "")
     match_customer = str(row.get("match_customer_id", "") or "")
     if query_customer and match_customer:
-        return ("same_customer" if query_customer == match_customer else "cross_customer"), "customer_id"
+        weak = "matched_format_only" in {str(row.get("query_customer_id_status", "")), str(row.get("match_customer_id_status", ""))}
+        source = "customer_id_format_only" if weak else "customer_id"
+        return ("same_customer" if query_customer == match_customer else "cross_customer"), source
     return "unknown", "customer_id_unavailable"
 
 
@@ -159,8 +179,12 @@ def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
         threshold = policy.default
 
     is_suspicious = bool(relation != "self" and score >= threshold)
-    if relation == "cross_customer" and is_suspicious:
+    # A format-only competition identifier can support triage, but must not be
+    # presented as a confirmed cross-customer conclusion.
+    if relation == "cross_customer" and is_suspicious and relation_source == "customer_id":
         fraud_type = "cross_customer_fraud"
+    elif relation == "cross_customer" and is_suspicious:
+        fraud_type = "cross_customer_candidate"
     elif relation == "same_customer" and is_suspicious:
         fraud_type = "same_customer_repeat"
     elif relation == "unknown" and is_suspicious:
@@ -184,6 +208,7 @@ def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
     return {
         "customer_relation": relation,
         "customer_relation_source": relation_source,
+        "identity_evidence_level": "strong" if relation_source == "customer_id" else "weak" if relation_source == "customer_id_format_only" else "unavailable",
         "customer_relation_label": RELATION_LABELS_ZH.get(relation, relation),
         "monitor_threshold": threshold,
         "is_suspicious": is_suspicious,

@@ -1,4 +1,4 @@
-query_loan_id,match_loan_id,is_similar,note
+﻿query_loan_id,match_loan_id,is_similar,note
 loan_011,loan_053,1,confirmed_high_risk
 loan_011,loan_054,1,confirmed_high_risk
 loan_016,loan_059,1,confirmed_high_risk
@@ -6,7 +6,6 @@ loan_017,loan_061,1,confirmed_high_risk
 loan_050,loan_074,1,confirmed_high_risk
 loan_053,loan_054,1,confirmed_high_risk
 loan_058,loan_059,1,confirmed_high_risk
-loan_066,loan_067,1,confirmed_high_risk
 loan_016,loan_058,1,confirmed_medium_risk
 loan_028,loan_065,1,confirmed_medium_risk
 loan_043,loan_070,1,confirmed_medium_risk
@@ -29,7 +28,6 @@ loan_017,loan_060,1,confirmed_medium_risk
 loan_064,loan_065,1,confirmed_medium_risk
 loan_005,loan_052,1,confirmed_medium_risk
 loan_045,loan_073,1,confirmed_medium_risk
-loan_045,loan_072,1,confirmed_medium_risk
 loan_012,loan_055,1,confirmed_medium_risk
 loan_055,loan_056,1,confirmed_medium_risk
 loan_003,loan_005,0,rejected_below_097
@@ -43,3 +41,5 @@ loan_003,loan_009,0,rejected_below_097
 loan_007,loan_009,0,rejected_below_097
 loan_003,loan_052,0,rejected_below_097
 loan_010,loan_026,0,rejected_below_097
+loan_066,loan_067,1,manual_review
+loan_045,loan_072,1,manual_review

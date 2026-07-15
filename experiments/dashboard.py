@@ -45,6 +45,11 @@ FIELD_LABELS = {
     "customer_relation": "客户关系",
     "customer_relation_label": "客户关系",
     "customer_relation_source": "客户关系判定来源",
+    "identity_evidence_level": "身份依据强度",
+    "query_customer_id": "查询身份证哈希",
+    "match_customer_id": "匹配身份证哈希",
+    "query_customer_id_status": "查询身份证识别状态",
+    "match_customer_id_status": "匹配身份证识别状态",
     "monitor_threshold": "监测阈值",
     "is_suspicious": "是否可疑",
     "fraud_type": "监测类型",
@@ -81,6 +86,7 @@ FRAUD_MONITORING_REQUIRED_COLUMNS = [
     "cross_business_scene",
     "innovation_tags",
     "customer_relation_source",
+    "identity_evidence_level",
 ]
 
 
@@ -282,6 +288,28 @@ def save_review_label(query_loan_id: str, match_loan_id: str, is_similar: int, n
     st.cache_data.clear()
 
 
+def identity_card_path(face_path: str) -> str:
+    return str(Path(str(face_path)).with_name("id_card_front.jpg"))
+
+
+def mask_identity_hash(value: object) -> str:
+    value = str(value or "")
+    return f"{value[:10]}…{value[-6:]}" if len(value) > 18 else (value or "未识别")
+
+
+def save_identity_review(query_loan_id: str, match_loan_id: str, decision: str, note: str) -> None:
+    path = OUTPUT / "identity_review.csv"
+    columns = ["query_loan_id", "match_loan_id", "decision", "note"]
+    reviews = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=columns)
+    key = pair_key(query_loan_id, match_loan_id)
+    if not reviews.empty:
+        reviews["pair_key"] = [pair_key(a, b) for a, b in zip(reviews["query_loan_id"], reviews["match_loan_id"])]
+        reviews = reviews[reviews["pair_key"] != key].drop(columns=["pair_key"])
+    reviews = pd.concat([reviews, pd.DataFrame([{"query_loan_id": query_loan_id, "match_loan_id": match_loan_id, "decision": decision, "note": note}])], ignore_index=True)
+    reviews.to_csv(path, index=False, encoding="utf-8-sig")
+    st.cache_data.clear()
+
+
 @st.cache_resource(show_spinner=False)
 def load_runtime(output_dir: str):
     _, get_runtime = load_inference_functions()
@@ -342,7 +370,7 @@ st.caption(
 )
 
 tab_upload, tab_overview, tab_fraud, tab_graph, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
-    ["上传检测", "检测汇总", "欺诈监测", "风险关系簇", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
+    ["上传检测", "检测汇总", "风控命中（≥0.95）", "风险关系簇", "高风险候选（≥0.97）", "分类结果", "阈值实验", "后续实验建议"]
 )
 
 with tab_upload:
@@ -438,7 +466,7 @@ with tab_overview:
     st.dataframe(eval_table, width="stretch", hide_index=True)
 
 with tab_fraud:
-    st.subheader("欺诈行为监测")
+    st.subheader("风控命中：按客户关系分层阈值（跨客户 ≥ 0.95）")
     suspicious = monitoring[monitoring["is_suspicious"].astype(bool)].copy() if not monitoring.empty else pd.DataFrame()
     fraud_counts = suspicious["fraud_type"].value_counts() if not suspicious.empty else pd.Series(dtype=int)
     priority_counts = suspicious["review_priority"].value_counts() if not suspicious.empty else pd.Series(dtype=int)
@@ -446,16 +474,16 @@ with tab_fraud:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("监测候选对", int(monitoring_summary.get("total_pairs", len(monitoring))))
     c2.metric("可疑命中", int(monitoring_summary.get("suspicious_pairs", len(suspicious))))
-    c3.metric("跨客户欺诈", int(fraud_counts.get("cross_customer_fraud", 0)))
-    c4.metric("待客户核验", int(fraud_counts.get("cross_customer_candidate", 0)))
+    c3.metric("确认跨客户欺诈（强依据）", int(fraud_counts.get("cross_customer_fraud", 0)))
+    c4.metric("跨客户高风险候选", int(fraud_counts.get("cross_customer_candidate", 0)))
 
-    st.caption("生产判定优先使用 customer_id；比赛数据未提供该字段时，高相似记录仅标为“待客户关系核验”。similar_group 只用于离线评估与阈值校准。")
+    st.caption("严格校验的 customer_id_hash 不同，才显示为确认跨客户欺诈；比赛模拟编号仅做格式级匹配时，显示为跨客户高风险候选。similar_group 只用于离线评估与阈值校准。")
 
     g1, g2, g3, g4 = st.columns(4)
     g1.metric("风险关系簇", int(monitoring_summary.get("risk_cluster_count", 0)))
     g2.metric("最大簇业务数", int(monitoring_summary.get("max_risk_cluster_size", 0)))
     g3.metric("跨产品可疑", int(monitoring_summary.get("cross_business_suspicious", 0)))
-    g4.metric("极高欺诈分", int(monitoring_summary.get("critical_alerts", 0)))
+    g4.metric("极高风险候选", int(monitoring_summary.get("critical_alerts", 0)))
 
     left, right = st.columns(2)
     with left:
@@ -498,6 +526,9 @@ with tab_fraud:
         "score_gap_to_threshold",
         "customer_relation_label",
         "customer_relation_source",
+        "identity_evidence_level",
+        "query_customer_id_status",
+        "match_customer_id_status",
         "fraud_type_label_zh",
         "risk_cluster_id",
         "risk_cluster_size",
@@ -524,6 +555,33 @@ with tab_fraud:
             st.image(row["query_path"], caption=f'查询：{row["query_loan_id"]} / {row.get("query_business_loan_id", "")}')
         with right:
             st.image(row["match_path"], caption=f'命中：{row["match_loan_id"]} / {row.get("match_business_loan_id", "")}')
+        st.markdown("**身份证主键核验**")
+        id_left, id_right = st.columns(2)
+        with id_left:
+            query_id_path = identity_card_path(row["query_path"])
+            if Path(query_id_path).exists():
+                st.image(query_id_path, caption=f'查询身份证：{row["query_loan_id"]}', width=280)
+            else:
+                st.warning("未找到查询身份证正面")
+        with id_right:
+            match_id_path = identity_card_path(row["match_path"])
+            if Path(match_id_path).exists():
+                st.image(match_id_path, caption=f'匹配身份证：{row["match_loan_id"]}', width=280)
+            else:
+                st.warning("未找到匹配身份证正面")
+        identity_fields = pd.DataFrame([
+            {"业务": "查询", "贷款": row["query_loan_id"], "身份证哈希": mask_identity_hash(row.get("query_customer_id", "")), "OCR状态": row.get("query_customer_id_status", "未识别")},
+            {"业务": "匹配", "贷款": row["match_loan_id"], "身份证哈希": mask_identity_hash(row.get("match_customer_id", "")), "OCR状态": row.get("match_customer_id_status", "未识别")},
+        ])
+        st.dataframe(identity_fields, width="stretch", hide_index=True)
+        st.caption(f'客户关系来源：{row.get("customer_relation_source", "customer_id_unavailable")}。`matched_format_only` 为比赛模拟身份证编号的格式级依据，生产环境需使用严格校验或核心客户号。')
+        with st.form("identity_review_form"):
+            decision = st.radio("人工核验结论", ["确认跨客户", "确认同客户", "身份证无法辨识", "暂不确定"], horizontal=True)
+            identity_note = st.text_input("身份证核验备注", value="manual_identity_review")
+            identity_submitted = st.form_submit_button("保存身份证核验结论")
+        if identity_submitted:
+            save_identity_review(row["query_loan_id"], row["match_loan_id"], decision, identity_note)
+            st.success("身份证核验结论已保存到 outputs/mvp/identity_review.csv")
         detail_cols = st.columns(4)
         fraud_score = float(row.get("fraud_score", 0.0) or 0.0)
         detail_cols[0].metric("综合欺诈分", f"{fraud_score:.4f}" if fraud_score else "-")
@@ -560,7 +618,8 @@ with tab_graph:
         st.dataframe(with_chinese_columns(graph_edges.sort_values("fraud_score", ascending=False)), width="stretch", hide_index=True)
 
 with tab_risks:
-    st.subheader("高相似可疑交易")
+    st.subheader("高风险候选：统一高风险阈值 ≥ 0.97")
+    st.caption("该视图用于紧急优先级队列；0.95–0.97 的风控命中仍会展示在“风控命中（≥0.95）”页。")
     risk_filter = st.multiselect("风险等级", ["high", "medium", "low"], default=["high"])
     business_types = sorted(set(topk["query_business_type"].dropna()) | set(topk["match_business_type"].dropna()))
     selected_business = st.selectbox("业务类型", ["全部"] + business_types)

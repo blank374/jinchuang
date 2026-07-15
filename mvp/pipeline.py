@@ -15,7 +15,7 @@ from PIL import Image, ImageEnhance, ImageOps
 from torch import nn
 from transformers import AutoModel, AutoProcessor
 
-from src.fraud_monitoring import build_fraud_monitoring, load_annotations, write_monitoring_outputs
+from src.fraud_monitoring import attach_customer_identity, build_fraud_monitoring, load_annotations, write_monitoring_outputs
 from src.risk_policy import ThresholdPolicy
 
 IMAGE_TYPES = (
@@ -402,6 +402,8 @@ def run(args: argparse.Namespace) -> None:
     topk = build_faiss(face_embeddings, face_frame, output_dir, args.top_k)
     annotations_path = find_annotations_file(dataset_root)
     annotations = load_annotations(annotations_path) if annotations_path else pd.DataFrame()
+    if not annotations.empty and args.identity_map:
+        annotations = attach_customer_identity(annotations, args.identity_map)
     calibrated = labeled_threshold_experiment(topk, annotations) if not annotations.empty else None
     if calibrated:
         print("[6/7] Running labeled threshold calibration")
@@ -439,6 +441,7 @@ def run(args: argparse.Namespace) -> None:
         "device": str(device),
         "dataset_root": str(dataset_root),
         "annotations_path": str(annotations_path) if annotations_path else "",
+        "identity_map_path": str(args.identity_map) if args.identity_map else "",
         "total_images": int(len(manifest)),
         "valid_images": int(len(valid)),
         "bad_images": int((manifest["status"] != "ok").sum()),
@@ -465,6 +468,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--dataset-root", default="")
     parser.add_argument("--output-dir", default="")
+    parser.add_argument("--identity-map", default="", help="CSV from scripts/build_identity_map.py; contains hashed customer keys only.")
     parser.add_argument("--model-name", default=DEFAULT_MODEL)
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, or mps")
     parser.add_argument("--batch-size", type=int, default=8)
