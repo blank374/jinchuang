@@ -11,6 +11,7 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
+import pandas as pd
 import torch
 import uvicorn
 import yaml
@@ -25,7 +26,7 @@ searcher = None
 classifier = None
 preprocessor = None
 config = None
-loan_to_group: dict[str, str] = {}
+loan_to_customer: dict[str, str] = {}
 risk_policy = None
 
 
@@ -41,6 +42,54 @@ app = FastAPI(
     version="1.1.0",
     lifespan=lifespan,
 )
+
+
+def search_image(image: Image.Image, filename: str, top_k: int, query_loan_id: str, force_search: bool) -> dict:
+    """Shared single-image inference used by the interactive and batch APIs."""
+    image_tensor = preprocess_image(image)
+    category_id, category_name, scores = classifier.classify(image_tensor)
+    is_sign, sign_confidence = classifier.is_sign_photo(image_tensor)
+    result = {
+        "filename": filename,
+        "category_id": category_id,
+        "category_name": category_name,
+        "is_sign_photo": bool(is_sign),
+        "sign_confidence": round(float(sign_confidence), 4),
+        "searched": bool(is_sign or force_search),
+        "all_scores": {name: round(float(score), 4) for name, score in sorted(scores.items(), key=lambda item: -item[1])},
+        "similar_results": [],
+    }
+    if not result["searched"]:
+        result["message"] = "The image is not classified as a sign-photo; similarity search was skipped."
+        result["risk_summary"] = {"cross_customer_fraud": 0, "same_customer_repeat": 0, "normal_low_risk": 0}
+        return result
+
+    from src.risk_policy import assess_match, summarize_risks
+    raw_results = searcher.search(encode_image(image_tensor)[0], top_k=top_k + 5)
+    effective_query_loan_id = query_loan_id or auto_detect_loan_id(raw_results)
+    for raw_rank, item in enumerate(raw_results, start=1):
+        risk = assess_match(float(item["score"]), effective_query_loan_id, item["metadata"], loan_to_customer, risk_policy)
+        if risk["relation"] == "self":
+            continue
+        metadata = item["metadata"]
+        result["similar_results"].append({
+            "rank": len(result["similar_results"]) + 1,
+            "raw_rank": raw_rank,
+            "similarity": round(float(item["score"]), 4),
+            "threshold_applied": round(float(risk["threshold_used"]), 4),
+            "relationship": risk["relation"], "relationship_label": risk["relation_label"],
+            "is_suspicious": risk["is_suspicious"], "fraud_type": risk["risk_type"],
+            "risk_level": risk["risk_level"], "review_priority": risk["review_priority"],
+            "recommended_action": risk["recommended_action"],
+            "loan_id": metadata.get("loan_id", metadata.get("biz_id", "")),
+            "business_type": metadata.get("business_type", ""), "similar_group": metadata.get("similar_group", ""),
+            "path": metadata.get("path", ""),
+        })
+        if len(result["similar_results"]) >= top_k:
+            break
+    result["query_loan_id"] = effective_query_loan_id
+    result["risk_summary"] = summarize_risks(result["similar_results"])
+    return result
 
 
 def load_config() -> dict:
@@ -79,12 +128,12 @@ def lazy_init() -> None:
     risk_policy = ThresholdPolicy.from_config(config)
 
     searcher.load()
-    loan_to_group.clear()
+    loan_to_customer.clear()
     for item in searcher.metadata:
         loan_id = str(item.get("loan_id", "") or item.get("biz_id", ""))
-        similar_group = str(item.get("similar_group", "") or "")
-        if loan_id and similar_group:
-            loan_to_group[loan_id] = similar_group
+        customer_id = str(item.get("customer_id", item.get("customer_no", "")) or "")
+        if loan_id and customer_id:
+            loan_to_customer[loan_id] = customer_id
 
 
 def read_image(file: UploadFile, content: bytes) -> Image.Image:
@@ -141,7 +190,7 @@ async def stats() -> dict:
         "index_type": searcher.index_type,
         "embedding_dim": searcher.embedding_dim,
         "category_distribution": dict(category_counts.most_common()),
-        "known_business_groups": len(set(loan_to_group.values())),
+        "known_customer_ids": len(set(loan_to_customer.values())),
     }
 
 
@@ -177,91 +226,21 @@ async def search(
     from src.risk_policy import assess_match, summarize_risks
 
     image = read_image(file, await file.read())
-    image_tensor = preprocess_image(image)
-    category_id, category_name, scores = classifier.classify(image_tensor)
-    is_sign, sign_confidence = classifier.is_sign_photo(image_tensor)
-
-    if not is_sign and not force_search:
-        return {
-            "filename": file.filename,
-            "category_id": category_id,
-            "category_name": category_name,
-            "is_sign_photo": False,
-            "sign_confidence": round(float(sign_confidence), 4),
-            "searched": False,
-            "message": "The image is not classified as a sign-photo; similarity search was skipped.",
-            "all_scores": {
-                name: round(float(score), 4)
-                for name, score in sorted(scores.items(), key=lambda item: -item[1])
-            },
-            "similar_results": [],
-            "risk_summary": summarize_risks([]),
-        }
-
     requested_top_k = top_k or int(config["app"].get("top_k", 5))
     effective_review_threshold = (
         float(review_threshold)
         if review_threshold is not None
         else float(config["retrieval"].get("high_risk_threshold", config["retrieval"]["similarity_threshold"]))
     )
-    raw_results = searcher.search(encode_image(image_tensor)[0], top_k=requested_top_k + 5)
-    if not query_loan_id:
-        query_loan_id = auto_detect_loan_id(raw_results)
-
-    similar_results = []
-    for rank, item in enumerate(raw_results, start=1):
-        risk = assess_match(
-            score=float(item["score"]),
-            query_loan_id=query_loan_id,
-            metadata=item["metadata"],
-            loan_to_group=loan_to_group,
-            policy=risk_policy,
-        )
-        if risk["relation"] == "self":
-            continue
-
-        metadata = item["metadata"]
-        similar_results.append(
-            {
-                "rank": len(similar_results) + 1,
-                "raw_rank": rank,
-                "similarity": round(float(item["score"]), 4),
-                "threshold_applied": round(float(risk["threshold_used"]), 4),
-                "review_threshold": round(effective_review_threshold, 4),
-                "selected_by_review_threshold": bool(float(item["score"]) >= effective_review_threshold),
-                "relationship": risk["relation"],
-                "relationship_label": risk["relation_label"],
-                "is_suspicious": risk["is_suspicious"],
-                "risk_level": risk["risk_level"],
-                "risk_type": risk["risk_type"],
-                "risk_type_label": risk["risk_type_label"],
-                "review_priority": risk["review_priority"],
-                "recommended_action": risk["recommended_action"],
-                "policy_version": risk["policy_version"],
-                "loan_id": metadata.get("loan_id", metadata.get("biz_id", "")),
-                "business_type": metadata.get("business_type", ""),
-                "similar_group": metadata.get("similar_group", ""),
-                "category": metadata.get("cat_name", ""),
-                "path": metadata.get("path", ""),
-            }
-        )
-        if len(similar_results) >= requested_top_k:
-            break
+    result = search_image(image, file.filename or "upload", requested_top_k, query_loan_id, force_search)
+    for item in result["similar_results"]:
+        item["review_threshold"] = round(effective_review_threshold, 4)
+        item["selected_by_review_threshold"] = bool(item["similarity"] >= effective_review_threshold)
 
     dynamic = config["retrieval"].get("dynamic_threshold", {})
     return {
-        "filename": file.filename,
+        **result,
         "model": config["model"]["name"],
-        "category_id": category_id,
-        "category_name": category_name,
-        "is_sign_photo": bool(is_sign),
-        "sign_confidence": round(float(sign_confidence), 4),
-        "searched": True,
-        "query_loan_id": query_loan_id,
-        "all_scores": {
-            name: round(float(score), 4)
-            for name, score in sorted(scores.items(), key=lambda item: -item[1])
-        },
         "dynamic_threshold": {
             "enabled": bool(dynamic.get("enabled", False)),
             "cross_customer_threshold": risk_policy.cross_customer,
@@ -271,9 +250,35 @@ async def search(
             "medium_risk_threshold": risk_policy.medium_risk,
         },
         "review_threshold": effective_review_threshold,
-        "risk_summary": summarize_risks(similar_results),
-        "similar_results": similar_results,
     }
+
+
+@app.post("/batch-search")
+async def batch_search(
+    files: list[UploadFile] = File(...),
+    top_k: int = Query(default=5, ge=1, le=50),
+    force_search: bool = Query(default=False),
+) -> dict:
+    """Classify and search a batch; callers may persist the returned rows as CSV."""
+    lazy_init()
+    records = []
+    for file in files:
+        image = read_image(file, await file.read())
+        records.append(search_image(image, file.filename or "upload", top_k, "", force_search))
+    suspicious = sum(sum(1 for match in item["similar_results"] if match["is_suspicious"]) for item in records)
+    return {"total_files": len(records), "searched_files": sum(item["searched"] for item in records), "suspicious_matches": suspicious, "results": records}
+
+
+@app.get("/monitoring-report")
+async def monitoring_report(limit: int = Query(default=100, ge=1, le=500)) -> dict:
+    """Expose the latest offline graph-monitoring result to a dashboard client."""
+    report = ROOT / "outputs" / "mvp" / "fraud_monitoring.csv"
+    summary = ROOT / "outputs" / "mvp" / "fraud_monitoring_summary.json"
+    if not report.exists():
+        raise HTTPException(status_code=404, detail="Run `python -m mvp.pipeline` to generate the monitoring report.")
+    rows = pd.read_csv(report).head(limit).replace({np.nan: None}).to_dict(orient="records")
+    import json
+    return {"summary": json.loads(summary.read_text(encoding="utf-8")) if summary.exists() else {}, "records": rows}
 
 
 def main() -> None:

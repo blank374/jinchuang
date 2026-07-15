@@ -44,14 +44,14 @@ else:
     print("警告: 未找到索引，请先运行 python ingest.py --data_dir <图片目录>")
 
 # 构建 loan_id → similar_group 映射（用于差异化阈值）
-loan_to_sg = {}
+loan_to_customer = {}
 for m in searcher.metadata:
-    sg = m.get("similar_group", "")
+    customer_id = m.get("customer_id", m.get("customer_no", ""))
     loan = m.get("loan_id", "")
-    if sg and loan:
-        loan_to_sg[loan] = sg
-sg_count = len(set(loan_to_sg.values()))
-print(f"差异化阈值: 已加载 {len(loan_to_sg)} 笔贷款的 SG 映射 ({sg_count} 个相似组)")
+    if customer_id and loan:
+        loan_to_customer[loan] = customer_id
+customer_count = len(set(loan_to_customer.values()))
+print(f"差异化阈值: 已加载 {len(loan_to_customer)} 笔贷款的客户主键映射 ({customer_count} 个客户)")
 
 
 def get_index_stats():
@@ -106,8 +106,9 @@ def get_effective_threshold(query_loan_id: str, result_metadata: dict, config: d
         return 1.0, "self"
 
     # 查询 loan 有 SG，结果也有相同 SG → 同客户续贷
-    query_sg = loan_to_sg.get(query_loan_id, "") if query_loan_id else ""
-    if query_sg and result_sg and query_sg == result_sg:
+    query_customer = loan_to_customer.get(query_loan_id, "") if query_loan_id else ""
+    result_customer = result_metadata.get("customer_id", result_metadata.get("customer_no", ""))
+    if query_customer and result_customer and query_customer == result_customer:
         return dyn.get("same_customer", 0.92), "same_customer"
 
     # 其他 → 跨客户欺诈（默认保守策略）
@@ -243,7 +244,7 @@ def predict(image, query_loan_id="", review_threshold=None, force_search=True):
                 score=float(score),
                 query_loan_id=query_loan_id,
                 metadata=res["metadata"],
-                loan_to_group=loan_to_sg,
+                loan_to_customer=loan_to_customer,
                 policy=risk_policy,
             )
 
@@ -398,7 +399,7 @@ def batch_predict(images, query_loan_id=""):
                         score=float(r["score"]),
                         query_loan_id=img_loan_id,
                         metadata=r["metadata"],
-                        loan_to_group=loan_to_sg,
+                        loan_to_customer=loan_to_customer,
                         policy=risk_policy,
                     )
                     threshold = risk["threshold_used"]

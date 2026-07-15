@@ -13,18 +13,20 @@ RELATION_LABELS = {
     "self": "self match",
     "same_customer": "same customer / renewal",
     "cross_customer": "cross customer / suspected misuse",
-    "unknown": "unknown business relation",
+    "unknown": "customer relation needs verification",
 }
 
 RISK_TYPE_LABELS = {
-    "cross_customer_suspect": "cross-customer suspected misuse",
+    "cross_customer_fraud": "cross-customer suspected fraud",
     "same_customer_repeat": "same-customer repeated use",
+    "cross_customer_candidate": "high-similarity candidate pending customer verification",
     "normal_low_risk": "normal low-risk candidate",
 }
 
 RECOMMENDED_ACTIONS = {
-    "cross_customer_suspect": "Send to anti-fraud review; verify identity and loan context before approval.",
+    "cross_customer_fraud": "Send to anti-fraud review; verify identity and loan context before approval.",
     "same_customer_repeat": "Send to standard operations/compliance review; confirm renewal or repeated submission.",
+    "cross_customer_candidate": "Verify customer identity using the business master before assigning a fraud type.",
     "normal_low_risk": "Keep as low-priority audit evidence; no blocking action is suggested.",
 }
 
@@ -52,27 +54,29 @@ class ThresholdPolicy:
         )
 
 
-def infer_relation(query_loan_id: str, metadata: dict, loan_to_group: dict[str, str]) -> str:
+def infer_relation(query_loan_id: str, metadata: dict, loan_to_customer: dict[str, str] | None = None) -> tuple[str, str]:
+    """Infer operational relation without using competition labels such as similar_group."""
     match_loan_id = str(metadata.get("loan_id", "") or metadata.get("biz_id", ""))
     if query_loan_id and query_loan_id == match_loan_id:
-        return "self"
+        return "self", "loan_id"
 
-    query_group = loan_to_group.get(query_loan_id, "") if query_loan_id else ""
-    match_group = str(metadata.get("similar_group", "") or "")
-    if query_group and match_group and query_group == match_group:
-        return "same_customer"
+    loan_to_customer = loan_to_customer or {}
+    query_customer = str(loan_to_customer.get(query_loan_id, "") or "")
+    match_customer = str(metadata.get("customer_id", metadata.get("customer_no", "")) or "")
+    if query_customer and match_customer:
+        return ("same_customer" if query_customer == match_customer else "cross_customer"), "customer_id"
 
-    return "cross_customer"
+    return "unknown", "customer_id_unavailable"
 
 
 def assess_match(
     score: float,
     query_loan_id: str,
     metadata: dict,
-    loan_to_group: dict[str, str],
+    loan_to_customer: dict[str, str] | None,
     policy: ThresholdPolicy,
 ) -> dict:
-    relation = infer_relation(query_loan_id, metadata, loan_to_group)
+    relation, relation_source = infer_relation(query_loan_id, metadata, loan_to_customer)
     if relation == "self":
         threshold = 1.0
     elif not policy.enabled:
@@ -85,9 +89,11 @@ def assess_match(
     is_suspicious = bool(score >= threshold and relation != "self")
 
     if relation == "cross_customer" and is_suspicious:
-        risk_type = "cross_customer_suspect"
+        risk_type = "cross_customer_fraud"
     elif relation == "same_customer" and is_suspicious:
         risk_type = "same_customer_repeat"
+    elif relation == "unknown" and is_suspicious:
+        risk_type = "cross_customer_candidate"
     else:
         risk_type = "normal_low_risk"
 
@@ -97,7 +103,7 @@ def assess_match(
     elif is_suspicious and score >= policy.medium_risk:
         risk_level = "medium"
         review_priority = "standard"
-    elif risk_type in {"cross_customer_suspect", "same_customer_repeat"}:
+    elif risk_type in {"cross_customer_fraud", "same_customer_repeat"}:
         risk_level = "low"
         review_priority = "low"
     else:
@@ -107,6 +113,7 @@ def assess_match(
     return {
         "relation": relation,
         "relation_label": RELATION_LABELS.get(relation, relation),
+        "relation_source": relation_source,
         "threshold_used": threshold,
         "high_risk_threshold": policy.high_risk,
         "medium_risk_threshold": policy.medium_risk,
@@ -116,14 +123,15 @@ def assess_match(
         "risk_level": risk_level,
         "review_priority": review_priority,
         "recommended_action": RECOMMENDED_ACTIONS[risk_type],
-        "policy_version": "siglip2_stratified_v1",
+        "policy_version": "siglip2_stratified_v2",
     }
 
 
 def summarize_risks(items: list[dict]) -> dict:
     counts = Counter(item.get("risk_type", "normal_low_risk") for item in items)
     return {
-        "cross_customer_suspect": int(counts.get("cross_customer_suspect", 0)),
+        "cross_customer_fraud": int(counts.get("cross_customer_fraud", 0)),
         "same_customer_repeat": int(counts.get("same_customer_repeat", 0)),
+        "cross_customer_candidate": int(counts.get("cross_customer_candidate", 0)),
         "normal_low_risk": int(counts.get("normal_low_risk", 0)),
     }

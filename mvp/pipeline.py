@@ -309,6 +309,41 @@ def threshold_experiment(
     return report, metadata
 
 
+def labeled_threshold_experiment(topk: pd.DataFrame, annotations: pd.DataFrame) -> tuple[pd.DataFrame, dict] | None:
+    """Calibrate retrieval thresholds with competition labels, never use them at inference."""
+    from src.fraud_monitoring import enrich_topk_with_business
+
+    pairs = enrich_topk_with_business(topk, annotations)
+    pairs = pairs[pairs["query_loan_id"].astype(str) != pairs["match_loan_id"].astype(str)]
+    pairs = pairs.sort_values(["cosine_similarity", "rank"], ascending=[False, True]).drop_duplicates("pair_key")
+    if pairs.empty:
+        return None
+    truth = (
+        pairs["query_similar_group"].fillna("").astype(str).ne("")
+        & pairs["query_similar_group"].fillna("").astype(str).eq(pairs["match_similar_group"].fillna("").astype(str))
+    )
+    if not truth.any():
+        return None
+    rows = []
+    scores = pairs["cosine_similarity"].to_numpy()
+    labels = truth.to_numpy()
+    for threshold in np.round(np.arange(0.50, 1.001, 0.01), 2):
+        selected = scores >= threshold
+        tp, fp = int((selected & labels).sum()), int((selected & ~labels).sum())
+        fn = int((~selected & labels).sum())
+        precision = tp / (tp + fp) if tp + fp else 1.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        rows.append({"threshold": threshold, "precision": precision, "recall": recall, "f1": f1, "review_count": int(selected.sum()), "tp": tp, "fp": fp, "fn": fn})
+    report = pd.DataFrame(rows)
+    best = report.iloc[report["f1"].idxmax()].to_dict()
+    return report, {
+        "evaluation_type": "competition_ground_truth",
+        "note": "similar_group is used only as a de-identified offline ground truth for threshold calibration; it is never an online customer-relation feature.",
+        "positive_pairs": int(labels.sum()), "negative_pairs": int((~labels).sum()), "best_f1_threshold": best,
+    }
+
+
 def assign_risk(topk: pd.DataFrame, high: float, medium: float) -> pd.DataFrame:
     result = topk.copy()
     result["risk_level"] = np.select(
@@ -365,24 +400,27 @@ def run(args: argparse.Namespace) -> None:
 
     print(f"[5/7] Building FAISS index for {len(face_frame)} selected signing photos")
     topk = build_faiss(face_embeddings, face_frame, output_dir, args.top_k)
-    print("[6/7] Running proxy threshold experiment")
-    threshold_report, threshold_metadata = threshold_experiment(
-        encoder, face_frame, face_embeddings, args.batch_size
-    )
+    annotations_path = find_annotations_file(dataset_root)
+    annotations = load_annotations(annotations_path) if annotations_path else pd.DataFrame()
+    calibrated = labeled_threshold_experiment(topk, annotations) if not annotations.empty else None
+    if calibrated:
+        print("[6/7] Running labeled threshold calibration")
+        threshold_report, threshold_metadata = calibrated
+    else:
+        print("[6/7] Running proxy threshold experiment")
+        threshold_report, threshold_metadata = threshold_experiment(encoder, face_frame, face_embeddings, args.batch_size)
     threshold_report.to_csv(output_dir / "threshold_experiment.csv", index=False, encoding="utf-8-sig")
     with (output_dir / "threshold_metadata.json").open("w", encoding="utf-8") as handle:
         json.dump(threshold_metadata, handle, ensure_ascii=False, indent=2)
 
     proxy_threshold = float(threshold_metadata["best_f1_threshold"]["threshold"])
-    best_threshold = args.high_risk_threshold
+    best_threshold = proxy_threshold if args.use_calibrated_high_threshold else args.high_risk_threshold
     medium_threshold = args.medium_risk_threshold
     risk_results = assign_risk(topk, best_threshold, medium_threshold)
     risk_results.to_csv(output_dir / "topk_results.csv", index=False, encoding="utf-8-sig")
 
-    annotations_path = find_annotations_file(dataset_root)
     if annotations_path:
         print("[6b/7] Building fraud monitoring report")
-        annotations = load_annotations(annotations_path)
         policy = ThresholdPolicy(
             enabled=True,
             same_customer=args.same_customer_threshold,
@@ -408,6 +446,7 @@ def run(args: argparse.Namespace) -> None:
         "selected_face_signing": int(len(face_frame)),
         "top_k": args.top_k,
         "high_risk_threshold": best_threshold,
+        "high_risk_threshold_source": "ground_truth_f1_calibration" if args.use_calibrated_high_threshold else "business_policy_initial_value",
         "medium_risk_threshold": medium_threshold,
         "cross_customer_threshold": args.cross_customer_threshold,
         "same_customer_threshold": args.same_customer_threshold,
@@ -432,6 +471,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--high-risk-threshold", type=float, default=DEFAULT_HIGH_RISK_THRESHOLD)
+    parser.add_argument("--use-calibrated-high-threshold", action="store_true", help="Use the offline F1-selected threshold instead of the initial business threshold.")
     parser.add_argument("--medium-risk-threshold", type=float, default=DEFAULT_MEDIUM_RISK_THRESHOLD)
     parser.add_argument("--cross-customer-threshold", type=float, default=0.95)
     parser.add_argument("--same-customer-threshold", type=float, default=0.92)

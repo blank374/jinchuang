@@ -12,12 +12,14 @@ from src.risk_policy import ThresholdPolicy
 FRAUD_TYPE_LABELS = {
     "cross_customer_fraud": "cross-customer suspected fraud",
     "same_customer_repeat": "same-customer repeat submission",
+    "cross_customer_candidate": "high-similarity candidate pending customer verification",
     "normal_low_risk": "normal low-risk candidate",
 }
 
 FRAUD_TYPE_LABELS_ZH = {
     "cross_customer_fraud": "陌生人跨客户疑似欺诈",
     "same_customer_repeat": "同客户重复提交",
+    "cross_customer_candidate": "高相似待客户关系核验",
     "normal_low_risk": "低风险候选",
 }
 
@@ -25,11 +27,13 @@ RELATION_LABELS_ZH = {
     "self": "同一笔业务",
     "same_customer": "同客户",
     "cross_customer": "陌生人/跨客户",
+    "unknown": "客户关系待核验",
 }
 
 RECOMMENDED_ACTIONS_ZH = {
     "cross_customer_fraud": "进入反欺诈复核，重点核验身份、面签场景和贷款上下文。",
     "same_customer_repeat": "进入运营/合规复核，确认是否为续贷、补件或重复提交。",
+    "cross_customer_candidate": "先通过客户主数据核验是否为不同客户，再决定是否进入反欺诈复核。",
     "normal_low_risk": "保留为审计证据，低优先级抽检。",
 }
 
@@ -60,7 +64,7 @@ def load_annotations(path: Path | str | None) -> pd.DataFrame:
 
 
 def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
-    columns = ["dataset_loan_id", "business_loan_id", "business_type", "similar_group", "is_similar_pair"]
+    columns = ["dataset_loan_id", "business_loan_id", "business_type", "customer_id", "similar_group", "is_similar_pair"]
     if annotations.empty or "image_type" not in annotations.columns:
         return pd.DataFrame(columns=columns)
 
@@ -70,11 +74,15 @@ def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
     if "dataset_loan_id" not in face.columns:
         face["dataset_loan_id"] = face.get("loan_id", "").astype(str)
 
+    customer_values = face["customer_id"] if "customer_id" in face.columns else (
+        face["customer_no"] if "customer_no" in face.columns else pd.Series("", index=face.index)
+    )
     result = pd.DataFrame(
         {
             "dataset_loan_id": face["dataset_loan_id"].astype(str),
             "business_loan_id": face.get("loan_id", "").astype(str),
             "business_type": face.get("business_type", "").fillna("").astype(str),
+            "customer_id": customer_values.fillna("").astype(str),
             "similar_group": face.get("similar_group", "").fillna("").astype(str),
             "is_similar_pair": face.get("is_similar_pair", 0),
         }
@@ -90,9 +98,11 @@ def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> 
         for column in (
             "query_business_loan_id",
             "query_business_type",
+            "query_customer_id",
             "query_similar_group",
             "match_business_loan_id",
             "match_business_type",
+            "match_customer_id",
             "match_similar_group",
         ):
             enriched[column] = ""
@@ -113,9 +123,11 @@ def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> 
     for column in (
         "query_business_loan_id",
         "query_business_type",
+        "query_customer_id",
         "query_similar_group",
         "match_business_loan_id",
         "match_business_type",
+        "match_customer_id",
         "match_similar_group",
     ):
         if column not in enriched.columns:
@@ -124,18 +136,18 @@ def enrich_topk_with_business(topk: pd.DataFrame, annotations: pd.DataFrame) -> 
     return enriched
 
 
-def infer_customer_relation(row: pd.Series) -> str:
+def infer_customer_relation(row: pd.Series) -> tuple[str, str]:
     if str(row.get("query_loan_id", "")) == str(row.get("match_loan_id", "")):
-        return "self"
-    query_group = str(row.get("query_similar_group", "") or "")
-    match_group = str(row.get("match_similar_group", "") or "")
-    if query_group and match_group and query_group == match_group:
-        return "same_customer"
-    return "cross_customer"
+        return "self", "loan_id"
+    query_customer = str(row.get("query_customer_id", "") or "")
+    match_customer = str(row.get("match_customer_id", "") or "")
+    if query_customer and match_customer:
+        return ("same_customer" if query_customer == match_customer else "cross_customer"), "customer_id"
+    return "unknown", "customer_id_unavailable"
 
 
 def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
-    relation = infer_customer_relation(row)
+    relation, relation_source = infer_customer_relation(row)
     score = float(row["cosine_similarity"])
     if relation == "self":
         threshold = 1.0
@@ -151,6 +163,8 @@ def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
         fraud_type = "cross_customer_fraud"
     elif relation == "same_customer" and is_suspicious:
         fraud_type = "same_customer_repeat"
+    elif relation == "unknown" and is_suspicious:
+        fraud_type = "cross_customer_candidate"
     else:
         fraud_type = "normal_low_risk"
 
@@ -169,6 +183,7 @@ def classify_monitoring_row(row: pd.Series, policy: ThresholdPolicy) -> dict:
 
     return {
         "customer_relation": relation,
+        "customer_relation_source": relation_source,
         "customer_relation_label": RELATION_LABELS_ZH.get(relation, relation),
         "monitor_threshold": threshold,
         "is_suspicious": is_suspicious,
@@ -224,6 +239,12 @@ def add_fraud_graph_features(frame: pd.DataFrame) -> pd.DataFrame:
     cluster_size = []
     cross_business_scene = []
     fraud_scores = []
+    similarity_components = []
+    margin_components = []
+    relation_components = []
+    business_components = []
+    degree_components = []
+    cluster_components = []
     score_levels = []
     innovation_tags = []
 
@@ -252,10 +273,21 @@ def add_fraud_graph_features(frame: pd.DataFrame) -> pd.DataFrame:
         business_bonus = 0.06 if is_cross_business else 0.0
         graph_bonus = min(0.18, 0.04 * max(degree.get(query, 0), degree.get(match, 0)))
         cluster_bonus = min(0.12, 0.02 * max(cluster_size[-1] - 2, 0))
-        score = min(1.0, 0.52 * float(row.cosine_similarity) + 0.24 * normalized_margin + relation_bonus + business_bonus + graph_bonus + cluster_bonus)
+        # The score is deliberately decomposed into auditable components.  A
+        # reviewer can therefore distinguish a very similar pair from a pair
+        # whose priority is raised mainly by its business and graph context.
+        similarity_component = 0.52 * float(row.cosine_similarity)
+        margin_component = 0.24 * normalized_margin
+        score = min(1.0, similarity_component + margin_component + relation_bonus + business_bonus + graph_bonus + cluster_bonus)
         if not bool(row.is_suspicious):
             score = min(score, 0.49)
         fraud_scores.append(round(score, 4))
+        similarity_components.append(round(similarity_component, 4))
+        margin_components.append(round(margin_component, 4))
+        relation_components.append(round(relation_bonus, 4))
+        business_components.append(round(business_bonus, 4))
+        degree_components.append(round(graph_bonus, 4))
+        cluster_components.append(round(cluster_bonus, 4))
 
         if score >= 0.90:
             level = "critical"
@@ -278,6 +310,8 @@ def add_fraud_graph_features(frame: pd.DataFrame) -> pd.DataFrame:
             tags.append("风险关系簇")
         if max(degree.get(query, 0), degree.get(match, 0)) >= 3:
             tags.append("高连接节点")
+        if score >= 0.90:
+            tags.append("极高综合欺诈分")
         innovation_tags.append("、".join(tags) if tags else "常规相似候选")
 
     result["query_risk_degree"] = query_degree
@@ -286,6 +320,12 @@ def add_fraud_graph_features(frame: pd.DataFrame) -> pd.DataFrame:
     result["risk_cluster_size"] = cluster_size
     result["cross_business_scene"] = cross_business_scene
     result["fraud_score"] = fraud_scores
+    result["score_component_similarity"] = similarity_components
+    result["score_component_threshold_margin"] = margin_components
+    result["score_component_customer_relation"] = relation_components
+    result["score_component_cross_product"] = business_components
+    result["score_component_node_degree"] = degree_components
+    result["score_component_cluster_size"] = cluster_components
     result["fraud_score_level"] = score_levels
     result["fraud_score_level_zh"] = [FRAUD_SCORE_LEVELS_ZH[level] for level in score_levels]
     result["innovation_tags"] = innovation_tags
@@ -312,6 +352,58 @@ def build_fraud_monitoring(topk: pd.DataFrame, annotations: pd.DataFrame, policy
     ).reset_index(drop=True)
 
 
+def build_risk_graph(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return presentation-ready risk graph nodes and suspicious similarity edges.
+
+    The graph stays intentionally tabular: it can be loaded by Streamlit,
+    NetworkX/Neo4j, or a downstream graph database without coupling the batch
+    pipeline to one graph vendor.
+    """
+    node_columns = ["loan_id", "business_loan_id", "business_type", "similar_group", "risk_degree", "risk_cluster_id", "risk_cluster_size", "max_fraud_score"]
+    edge_columns = ["source_loan_id", "target_loan_id", "cosine_similarity", "fraud_type", "fraud_score", "risk_cluster_id", "cross_business_scene", "innovation_tags"]
+    if frame.empty or "is_suspicious" not in frame:
+        return pd.DataFrame(columns=node_columns), pd.DataFrame(columns=edge_columns)
+
+    suspicious = frame[frame["is_suspicious"].astype(bool)].copy()
+    if suspicious.empty:
+        return pd.DataFrame(columns=node_columns), pd.DataFrame(columns=edge_columns)
+
+    edges = pd.DataFrame({
+        "source_loan_id": suspicious["query_loan_id"].astype(str),
+        "target_loan_id": suspicious["match_loan_id"].astype(str),
+        "cosine_similarity": suspicious["cosine_similarity"],
+        "fraud_type": suspicious["fraud_type"],
+        "fraud_score": suspicious["fraud_score"],
+        "risk_cluster_id": suspicious["risk_cluster_id"],
+        "cross_business_scene": suspicious["cross_business_scene"],
+        "innovation_tags": suspicious["innovation_tags"],
+    }).drop_duplicates(["source_loan_id", "target_loan_id"])
+
+    node_records: list[dict] = []
+    for row in suspicious.itertuples():
+        for side in ("query", "match"):
+            node_records.append({
+                "loan_id": str(getattr(row, f"{side}_loan_id")),
+                "business_loan_id": str(getattr(row, f"{side}_business_loan_id", "") or ""),
+                "business_type": str(getattr(row, f"{side}_business_type", "") or ""),
+                "similar_group": str(getattr(row, f"{side}_similar_group", "") or ""),
+                "risk_degree": int(getattr(row, f"{side}_risk_degree", 0)),
+                "risk_cluster_id": str(getattr(row, "risk_cluster_id", "") or ""),
+                "risk_cluster_size": int(getattr(row, "risk_cluster_size", 0)),
+                "max_fraud_score": float(getattr(row, "fraud_score", 0.0)),
+            })
+    nodes = pd.DataFrame(node_records).groupby("loan_id", as_index=False).agg(
+        business_loan_id=("business_loan_id", "first"),
+        business_type=("business_type", "first"),
+        similar_group=("similar_group", "first"),
+        risk_degree=("risk_degree", "max"),
+        risk_cluster_id=("risk_cluster_id", "first"),
+        risk_cluster_size=("risk_cluster_size", "max"),
+        max_fraud_score=("max_fraud_score", "max"),
+    )
+    return nodes[node_columns], edges[edge_columns]
+
+
 def summarize_monitoring(frame: pd.DataFrame) -> dict:
     if frame.empty:
         return {
@@ -327,6 +419,7 @@ def summarize_monitoring(frame: pd.DataFrame) -> dict:
         "total_pairs": int(len(frame)),
         "suspicious_pairs": int(len(suspicious)),
         "by_fraud_type": dict(Counter(suspicious["fraud_type"])),
+        "pending_customer_verification": int((suspicious["fraud_type"] == "cross_customer_candidate").sum()),
         "by_relation": dict(Counter(frame["customer_relation"])),
         "by_priority": dict(Counter(suspicious["review_priority"])),
         "by_fraud_score_level": dict(Counter(suspicious.get("fraud_score_level", []))),
@@ -342,7 +435,12 @@ def write_monitoring_outputs(frame: pd.DataFrame, output_dir: Path, name: str = 
     csv_path = output_dir / f"{name}.csv"
     summary_path = output_dir / f"{name}_summary.json"
     frame.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    graph_nodes, graph_edges = build_risk_graph(frame)
+    graph_nodes.to_csv(output_dir / "risk_graph_nodes.csv", index=False, encoding="utf-8-sig")
+    graph_edges.to_csv(output_dir / "risk_graph_edges.csv", index=False, encoding="utf-8-sig")
     summary = summarize_monitoring(frame)
+    summary["risk_graph_nodes"] = int(len(graph_nodes))
+    summary["risk_graph_edges"] = int(len(graph_edges))
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
     return summary

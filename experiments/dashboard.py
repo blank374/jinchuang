@@ -44,6 +44,7 @@ FIELD_LABELS = {
     "split": "数据划分",
     "customer_relation": "客户关系",
     "customer_relation_label": "客户关系",
+    "customer_relation_source": "客户关系判定来源",
     "monitor_threshold": "监测阈值",
     "is_suspicious": "是否可疑",
     "fraud_type": "监测类型",
@@ -55,6 +56,12 @@ FIELD_LABELS = {
     "query_business_loan_id": "查询业务贷款号",
     "match_business_loan_id": "匹配业务贷款号",
     "fraud_score": "综合欺诈分",
+    "score_component_similarity": "评分：影像相似度",
+    "score_component_threshold_margin": "评分：超阈值幅度",
+    "score_component_customer_relation": "评分：跨客户关系",
+    "score_component_cross_product": "评分：跨产品复用",
+    "score_component_node_degree": "评分：节点连接度",
+    "score_component_cluster_size": "评分：风险簇规模",
     "fraud_score_level_zh": "综合风险",
     "risk_cluster_id": "风险关系簇",
     "risk_cluster_size": "簇内业务数",
@@ -73,6 +80,7 @@ FRAUD_MONITORING_REQUIRED_COLUMNS = [
     "match_risk_degree",
     "cross_business_scene",
     "innovation_tags",
+    "customer_relation_source",
 ]
 
 
@@ -333,8 +341,8 @@ st.caption(
     f'上次流水线耗时：{summary["elapsed_seconds"]} 秒 | 标注文件：{data["annotations_path"] or "未找到"}'
 )
 
-tab_upload, tab_overview, tab_fraud, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
-    ["上传检测", "检测汇总", "欺诈监测", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
+tab_upload, tab_overview, tab_fraud, tab_graph, tab_risks, tab_classification, tab_threshold, tab_method = st.tabs(
+    ["上传检测", "检测汇总", "欺诈监测", "风险关系簇", "高相似可疑交易", "分类结果", "阈值实验", "后续实验建议"]
 )
 
 with tab_upload:
@@ -439,7 +447,9 @@ with tab_fraud:
     c1.metric("监测候选对", int(monitoring_summary.get("total_pairs", len(monitoring))))
     c2.metric("可疑命中", int(monitoring_summary.get("suspicious_pairs", len(suspicious))))
     c3.metric("跨客户欺诈", int(fraud_counts.get("cross_customer_fraud", 0)))
-    c4.metric("同客户重复", int(fraud_counts.get("same_customer_repeat", 0)))
+    c4.metric("待客户核验", int(fraud_counts.get("cross_customer_candidate", 0)))
+
+    st.caption("生产判定优先使用 customer_id；比赛数据未提供该字段时，高相似记录仅标为“待客户关系核验”。similar_group 只用于离线评估与阈值校准。")
 
     g1, g2, g3, g4 = st.columns(4)
     g1.metric("风险关系簇", int(monitoring_summary.get("risk_cluster_count", 0)))
@@ -487,6 +497,7 @@ with tab_fraud:
         "fraud_score_level_zh",
         "score_gap_to_threshold",
         "customer_relation_label",
+        "customer_relation_source",
         "fraud_type_label_zh",
         "risk_cluster_id",
         "risk_cluster_size",
@@ -523,6 +534,30 @@ with tab_fraud:
         st.write(f'创新监测标签：**{row.get("innovation_tags", "")}**')
         st.markdown("**处置建议**")
         st.info(row["recommended_action_zh"])
+
+with tab_graph:
+    st.subheader("风险关系图谱：业务、客户关系与相似影像")
+    st.caption("每条边代表一组达到分层阈值的面签影像相似关系；节点连接度和簇规模用于提升复核优先级，而不替代相似度判定。")
+    graph_nodes_path = OUTPUT / "risk_graph_nodes.csv"
+    graph_edges_path = OUTPUT / "risk_graph_edges.csv"
+    graph_nodes = pd.read_csv(graph_nodes_path) if graph_nodes_path.exists() else pd.DataFrame()
+    graph_edges = pd.read_csv(graph_edges_path) if graph_edges_path.exists() else pd.DataFrame()
+    if graph_nodes.empty:
+        st.info("暂无风险关系簇。运行 MVP 流水线后会自动生成图谱节点和边表。")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("风险节点", len(graph_nodes))
+        c2.metric("风险关系边", len(graph_edges))
+        c3.metric("高连接节点（≥3）", int((graph_nodes["risk_degree"] >= 3).sum()))
+        st.markdown("**风险簇汇总**")
+        clusters = graph_nodes.groupby("risk_cluster_id", dropna=False).agg(
+            业务数=("loan_id", "count"), 最大连接度=("risk_degree", "max"), 最高欺诈分=("max_fraud_score", "max"),
+        ).sort_values(["业务数", "最高欺诈分"], ascending=False)
+        st.dataframe(clusters, width="stretch")
+        st.markdown("**图谱节点（贷款/业务）**")
+        st.dataframe(with_chinese_columns(graph_nodes.sort_values(["risk_degree", "max_fraud_score"], ascending=False)), width="stretch", hide_index=True)
+        st.markdown("**图谱关系（相似影像边）**")
+        st.dataframe(with_chinese_columns(graph_edges.sort_values("fraud_score", ascending=False)), width="stretch", hide_index=True)
 
 with tab_risks:
     st.subheader("高相似可疑交易")
@@ -616,9 +651,9 @@ with tab_classification:
 with tab_threshold:
     st.subheader("阈值、准确率、召回率与复核成本")
     st.markdown(
-        "- 最终 high 阈值：`0.97`，来自人工审核校准。\n"
-        "- 最终 medium 阈值：`0.93`，作为抽检/二审候选池。\n"
-        "- 下表同时展示代理实验曲线和当前官方相似组口径下的动态指标。"
+        "- 阈值在验证集上扫描 Precision、Recall、F1 与 review_count；similar_group 仅作比赛离线真值。\n"
+        "- 生产环境使用客户主键判断关系，不能依赖 similar_group。\n"
+        "- `0.93/0.95/0.97` 是当前业务初始策略；可通过流水线参数启用 F1 校准阈值。"
     )
     threshold_rows = []
     for threshold in [0.85, 0.90, 0.93, 0.95, 0.97, 0.98]:

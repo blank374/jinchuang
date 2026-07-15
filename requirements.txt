@@ -1,4 +1,5 @@
 gradio>=4.44.1
+streamlit>=1.36.0
 huggingface-hub>=0.22.0
 numpy>=1.24.0,<2.0.0
 torch>=1.10.0
