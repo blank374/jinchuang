@@ -1,0 +1,50 @@
+{
+  "model_name": "google/siglip2-base-patch16-224",
+  "device": "cuda",
+  "dataset_root": "D:\\GitHub\\jinchuang\\23-多模态技术与数据治理赛道-基于多模态大模型的金融影像智能相似度检测模型\\基于多模态大模型的金融影像智能相似度检测模型",
+  "total_images": 370,
+  "valid_images": 370,
+  "bad_images": 0,
+  "class_counts": {
+    "bank_statement": 74,
+    "contract": 74,
+    "face_signing": 74,
+    "id_card_back": 74,
+    "id_card_front": 74
+  },
+  "selected_face_signing": 74,
+  "top_k": 5,
+  "high_risk_threshold": 0.97,
+  "medium_risk_threshold": 0.93,
+  "proxy_best_f1_threshold": 0.98,
+  "elapsed_seconds": 36.03,
+  "cross_customer_threshold": 0.95,
+  "same_customer_threshold": 0.92,
+  "fraud_monitoring_summary": {
+    "total_pairs": 254,
+    "suspicious_pairs": 44,
+    "by_fraud_type": {
+      "cross_customer_candidate": 44
+    },
+    "pending_customer_verification": 44,
+    "by_relation": {
+      "unknown": 254
+    },
+    "by_priority": {
+      "urgent": 33,
+      "standard": 11
+    },
+    "by_fraud_score_level": {
+      "critical": 4,
+      "high": 21,
+      "medium": 18,
+      "low": 1
+    },
+    "risk_cluster_count": 15,
+    "max_risk_cluster_size": 9,
+    "cross_business_suspicious": 29,
+    "critical_alerts": 4,
+    "risk_graph_nodes": 46,
+    "risk_graph_edges": 44
+  }
+}
