@@ -12,7 +12,7 @@ venv/
 env/
 
 # 项目数据（赛题数据集，ZIP 包约 400MB）
-data/
+#data/
 
 # FAISS 索引与模型检查点
 checkpoints/
