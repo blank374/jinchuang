@@ -1,6 +1,6 @@
 model:
-  name: "openai/clip-vit-base-patch32"
-  embedding_dim: 512
+  name: "google/siglip2-base-patch16-224"
+  embedding_dim: 768
 
 data:
   image_size: 224
@@ -65,7 +65,7 @@ training:
   epochs: 20
   learning_rate: 0.0001
   val_split: 0.2
-  freeze_backbone: true    # 冻结 CLIP，仅训练分类头
+  freeze_backbone: true    # 冻结 SigLIP2，仅训练分类头
   augment_prob: 0.8        # 正样本数据增强概率（重复提交图增加多样性）
   output_dir: "checkpoints/finetuned"
 

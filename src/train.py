@@ -34,7 +34,7 @@ def load_config():
 
 class AdapterHead(nn.Module):
     """浅层适配器：线性投影 → ReLU → 线性投影"""
-    def __init__(self, input_dim: int = 512, hidden_dim: int = 256):
+    def __init__(self, input_dim: int = 768, hidden_dim: int = 256):
         super().__init__()
         self.fc = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -46,22 +46,24 @@ class AdapterHead(nn.Module):
         return self.fc(x)
 
 
-class CLIPTripletModel(nn.Module):
-    """对比学习包装器：CLIP 特征提取 + 可选 adapter"""
-    def __init__(self, clip_model, freeze_backbone: bool = True, use_adapter: bool = True):
+class SigLIP2TripletModel(nn.Module):
+    """对比学习包装器：SigLIP2 特征提取 + 可选 adapter"""
+    def __init__(self, vision_language_model, embedding_dim: int, freeze_backbone: bool = True, use_adapter: bool = True):
         super().__init__()
-        self.clip_model = clip_model
+        self.vision_language_model = vision_language_model
         self.use_adapter = use_adapter
 
         if freeze_backbone:
-            for param in self.clip_model.parameters():
+            for param in self.vision_language_model.parameters():
                 param.requires_grad_(False)
 
         if use_adapter:
-            self.adapter = AdapterHead()
+            self.adapter = AdapterHead(input_dim=embedding_dim)
 
     def forward(self, images):
-        features = self.clip_model.get_image_features(pixel_values=images)
+        features = self.vision_language_model.get_image_features(pixel_values=images)
+        if not isinstance(features, torch.Tensor):
+            features = features.pooler_output
         features = nn.functional.normalize(features, dim=-1)
         if self.use_adapter:
             features = self.adapter(features)
@@ -195,7 +197,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=None,
                         help="批大小")
     parser.add_argument("--freeze_backbone", action="store_true", default=None,
-                        help="冻结 CLIP backbone")
+                        help="冻结 SigLIP2 backbone")
     parser.add_argument("--no_adapter", action="store_true",
                         help="不使用 adapter 头")
     parser.add_argument("--dual_margin", action="store_true",
@@ -272,11 +274,12 @@ def main():
     print(f"训练集: {train_size} 组, 验证集: {val_size} 组, batch_size: {batch_size}")
 
     # 初始化模型
-    from src.model import CLIPFeatureExtractor
-    base_extractor = CLIPFeatureExtractor(device=device)
+    from src.model import SigLIP2FeatureExtractor
+    base_extractor = SigLIP2FeatureExtractor(device=device, model_name=config["model"]["name"])
 
-    model = CLIPTripletModel(
-        clip_model=base_extractor.model,
+    model = SigLIP2TripletModel(
+        vision_language_model=base_extractor.model,
+        embedding_dim=config["model"]["embedding_dim"],
         freeze_backbone=config["training"]["freeze_backbone"],
         use_adapter=not args.no_adapter,
     ).to(device)

@@ -68,12 +68,12 @@ def lazy_init():
     with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    from src.model import CLIPFeatureExtractor
+    from src.model import SigLIP2FeatureExtractor
     from src.retrieval import SimilaritySearch
     from src.classifier import ImageClassifier
     from src.preprocessing import PreprocessingPipeline
 
-    extractor = CLIPFeatureExtractor()
+    extractor = SigLIP2FeatureExtractor(model_name=config["model"]["name"])
     searcher = SimilaritySearch(
         embedding_dim=config["model"]["embedding_dim"],
         index_type=config["retrieval"].get("index_type", "flat"),

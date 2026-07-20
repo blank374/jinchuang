@@ -2,7 +2,7 @@
 
 **赛题**: 第五届中国研究生金融科技创新大赛——"揭榜挂帅"赛题  
 **命题单位**: 无锡农村商业银行股份有限公司  
-**模型**: CLIP ViT-B/32 (openai/clip-vit-base-patch32)
+**模型**: SigLIP2 Base Patch16-224 (google/siglip2-base-patch16-224)
 
 ---
 
@@ -20,14 +20,14 @@
 
 ## 功能概述
 
-本系统基于 CLIP 多模态预训练模型，构建"分类过滤 + 特征提取 + 向量检索"三段式架构，实现金融影像的智能分类与相似度检测：
+本系统基于 SigLIP2 多模态预训练模型，构建"分类过滤 + 特征提取 + 向量检索"三段式架构，实现金融影像的智能分类与相似度检测：
 
 - **影像分类**: 零样本识别 5 类影像（面签照片 / 身份证 / 合同 / 银行流水 / 其他）
 - **面签筛选**: 自动从海量影像中筛选面签照片，进入相似度检测
 - **相似度检测**: 对面签照片进行特征提取、FAISS 向量检索，标记高风险重复提交
 - **批量检测**: 多张图片同时检测，导出 CSV 报告
 - **REST API**: 提供 HTTP 接口，支持系统集成
-- **对比学习微调**: 支持 TripletMarginLoss 对 CLIP 模型微调，提升金融影像域内区分能力
+- **对比学习微调**: 支持 TripletMarginLoss / 分层双 Margin Loss 对 SigLIP2 特征适配器微调，提升金融影像域内区分能力
 
 ---
 
@@ -75,7 +75,7 @@ pip install -r requirements.txt
 | 包名 | 版本 | 用途 |
 |------|------|------|
 | gradio | ≥4.44.1 | Web 演示界面 |
-| transformers | ≥4.21.0 | CLIP 模型加载 |
+| transformers | ≥4.21.0 | SigLIP2 模型加载 |
 | torch | ≥1.10.0 | 深度学习框架 |
 | faiss-cpu | ≥1.7.0 | 向量检索 |
 | opencv-python-headless | ≥4.8.0 | 图像预处理 |
@@ -172,7 +172,7 @@ python src/train.py --data_dir ./data_triplets --epochs 20
 ## 系统架构
 
 ```
-输入影像 → 预处理增强 → CLIP 零样本分类 → 面签照片 → CLIP 特征提取 → L2归一化 → FAISS 向量检索 → 相似度分数
+输入影像 → 预处理增强 → SigLIP2 零样本分类 → 面签照片 → SigLIP2 特征提取 → L2归一化 → FAISS 向量检索 → 相似度分数
                                                     ↓ 非面签
                                                 跳过检测
 ```
@@ -189,7 +189,7 @@ python src/train.py --data_dir ./data_triplets --epochs 20
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| 特征提取 | [src/model.py](src/model.py) | CLIP 图像编码器封装 |
+| 特征提取 | [src/model.py](src/model.py) | SigLIP2 图像编码器封装 |
 | 影像分类 | [src/classifier.py](src/classifier.py) | 零样本分类 + 面签判定 |
 | 预处理 | [src/preprocessing.py](src/preprocessing.py) | 图像增强管道 |
 | 向量检索 | [src/retrieval.py](src/retrieval.py) | FAISS 索引（Flat / IVF） |
@@ -314,7 +314,7 @@ Finance_Image_Similarity/
 ├── 23-多模态技术与数据治理赛道-无锡农商行-基于多模态大模型的金融影像智能相似度检测模型.docx
 ├── src/
 │   ├── __init__.py
-│   ├── model.py             # CLIP 特征提取器
+│   ├── model.py             # SigLIP2 特征提取器
 │   ├── classifier.py        # 零样本分类器
 │   ├── preprocessing.py     # 图像预处理链
 │   ├── retrieval.py         # FAISS 向量检索

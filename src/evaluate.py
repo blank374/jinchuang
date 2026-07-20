@@ -59,10 +59,10 @@ def load_config():
 
 def ensure_imports():
     """延迟导入，避免模块初始化时耗时长"""
-    from src.model import CLIPFeatureExtractor
+    from src.model import SigLIP2FeatureExtractor
     from src.retrieval import SimilaritySearch
     from src.classifier import ImageClassifier
-    return CLIPFeatureExtractor, SimilaritySearch, ImageClassifier
+    return SigLIP2FeatureExtractor, SimilaritySearch, ImageClassifier
 
 
 def load_image(path: str, image_size: int = 224):
@@ -348,7 +348,7 @@ def generate_report(eval_result, class_result, config):
     lines = []
     lines.append("# 模型评估报告\n")
     lines.append(f"**生成时间**: {timestr}\n")
-    lines.append(f"**模型**: CLIP-ViT-Base-Patch32 (openai/clip-vit-base-patch32)")
+    lines.append(f"**模型**: SigLIP2-Base-Patch16-224 (google/siglip2-base-patch16-224)")
     lines.append(f"**索引类型**: FAISS IndexFlatIP (余弦相似度)")
     lines.append(f"**测试样本**: 正样本(同一人) {int(np.sum(y_true))} 对, "
                  f"负样本(不同人) {int(len(y_true) - np.sum(y_true))} 对\n")
@@ -419,9 +419,9 @@ def run_evaluation(config=None, test_dir=None, output_dir=None, thresholds=None)
     print(f"找到 {len(pairs)} 对测试数据（正样本: {same_count}, 负样本: {diff_count}）")
 
     # 初始化组件
-    CLIPFeatureExtractor, SimilaritySearch, ImageClassifier = ensure_imports()
+    SigLIP2FeatureExtractor, SimilaritySearch, ImageClassifier = ensure_imports()
 
-    extractor = CLIPFeatureExtractor()
+    extractor = SigLIP2FeatureExtractor(model_name=config["model"]["name"])
     searcher = SimilaritySearch(embedding_dim=config["model"]["embedding_dim"])
     classifier = ImageClassifier(
         model=extractor.model,
