@@ -8,7 +8,7 @@ import os
 
 
 class SimilaritySearch:
-    def __init__(self, embedding_dim=512, index_path="checkpoints/faiss_index.bin",
+    def __init__(self, embedding_dim=768, index_path="checkpoints/faiss_index.bin",
                  index_type="flat", nlist=100):
         self.embedding_dim = embedding_dim
         self.index_path = index_path

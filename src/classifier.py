@@ -7,13 +7,13 @@ import numpy as np
 
 
 class ImageClassifier:
-    """基于 CLIP 的零样本影像分类器（面签照片/身份证/权证/合同/其他）"""
+    """基于 SigLIP2 的零样本影像分类器（面签照片/身份证/权证/合同/其他）"""
 
     def __init__(self, model, processor, categories: list[dict], device="cpu"):
         """
         Args:
-            model: CLIPModel 实例（复用外部已加载的模型）
-            processor: CLIPProcessor 实例
+            model: SigLIP2/AutoModel 实例（复用外部已加载的模型）
+            processor: AutoProcessor 实例
             categories: config.yaml classifier.categories 的列表
             device: 设备
         """
@@ -109,13 +109,13 @@ class ImageClassifier:
 
 # 简单测试
 if __name__ == "__main__":
-    from transformers import CLIPModel, CLIPProcessor
+    from transformers import AutoModel, AutoProcessor
     from PIL import Image
     import numpy as np
 
     device = "cpu"
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    model = AutoModel.from_pretrained("google/siglip2-base-patch16-224").to(device)
+    processor = AutoProcessor.from_pretrained("google/siglip2-base-patch16-224")
     model.eval()
 
     categories = [

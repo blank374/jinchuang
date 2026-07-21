@@ -23,7 +23,7 @@ from tqdm import tqdm
 # 将项目根目录加入路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.model import CLIPFeatureExtractor
+from src.model import SigLIP2FeatureExtractor
 from src.retrieval import SimilaritySearch
 from src.classifier import ImageClassifier
 from src.preprocessing import PreprocessingPipeline
@@ -93,15 +93,18 @@ def get_rel_path(file_path: Path, data_dir: str):
     return abs_file.replace(abs_data, "").lstrip("\\/").replace("\\", "/")
 
 
-def preprocess_image(img_path: str, image_size: int = 224, preprocessor=None):
+def preprocess_image(img_path: str, image_size: int = 224, preprocessor=None, extractor=None):
     """加载并预处理单张图片（集成预处理链）"""
     try:
         img = Image.open(img_path).convert("RGB")
         if preprocessor:
             img = preprocessor(img)
-        img = img.resize((image_size, image_size))
-        img_tensor = torch.tensor(np.array(img).transpose(2, 0, 1)).float() / 255.0
-        img_tensor = img_tensor.unsqueeze(0)
+        if extractor is not None:
+            img_tensor = extractor.preprocess(img)
+        else:
+            img = img.resize((image_size, image_size))
+            img_tensor = torch.tensor(np.array(img).transpose(2, 0, 1)).float() / 255.0
+            img_tensor = img_tensor.unsqueeze(0)
         return img, img_tensor
     except Exception as e:
         print(f"  读取失败 {img_path}: {e}")
@@ -121,7 +124,7 @@ def ingest(config: dict, data_dir: str, force_rebuild: bool = False,
         index_type = config["retrieval"].get("index_type", "flat")
     nlist = config["retrieval"].get("nlist", 100)
 
-    extractor = CLIPFeatureExtractor()  # 索引始终使用纯 CLIP 特征
+    extractor = SigLIP2FeatureExtractor(model_name=config["model"]["name"])  # 索引始终使用纯 SigLIP2 特征
 
     # 加载标注
     annotations = load_annotations(annotations_file)
@@ -181,7 +184,7 @@ def ingest(config: dict, data_dir: str, force_rebuild: bool = False,
         print("IVF 索引需要先训练聚类中心...")
         all_embs = []
         for img_path in tqdm(image_files, desc="提取训练样本"):
-            img, img_tensor = preprocess_image(str(img_path), config["data"]["image_size"], preprocessor)
+            img, img_tensor = preprocess_image(str(img_path), config["data"]["image_size"], preprocessor, extractor)
             if img_tensor is None:
                 continue
             with torch.no_grad():
@@ -199,7 +202,7 @@ def ingest(config: dict, data_dir: str, force_rebuild: bool = False,
 
     # 遍历入库（Flat 或 IVF 训练后第二轮）
     for img_path in tqdm(image_files, desc="处理中"):
-        img, img_tensor = preprocess_image(str(img_path), config["data"]["image_size"], preprocessor)
+        img, img_tensor = preprocess_image(str(img_path), config["data"]["image_size"], preprocessor, extractor)
         if img_tensor is None:
             skipped += 1
             continue

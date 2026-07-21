@@ -5,7 +5,7 @@ import gradio as gr
 import torch
 import numpy as np
 from PIL import Image
-from src.model import CLIPFeatureExtractor
+from src.model import SigLIP2FeatureExtractor
 from src.retrieval import SimilaritySearch
 from src.classifier import ImageClassifier
 from src.preprocessing import PreprocessingPipeline
@@ -17,13 +17,13 @@ with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 # 初始化全局组件
-extractor = CLIPFeatureExtractor()
+extractor = SigLIP2FeatureExtractor(model_name=config["model"]["name"])
 searcher = SimilaritySearch(
     embedding_dim=config["model"]["embedding_dim"],
     index_type=config["retrieval"].get("index_type", "flat"),
 )
 
-# 初始化分类器（复用 CLIP 模型）
+# 初始化分类器（复用 SigLIP2 模型）
 classifier = ImageClassifier(
     model=extractor.model,
     processor=extractor.processor,
