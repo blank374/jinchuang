@@ -47,6 +47,8 @@ class ImageClassifier:
 
         with torch.no_grad():
             text_features = self.model.get_text_features(**texts)
+            if not isinstance(text_features, torch.Tensor):
+                text_features = text_features.pooler_output
             text_features = F.normalize(text_features, dim=-1)
 
         # 按类别聚合：取该类下所有 prompt 特征的最大值（更鲁棒）
@@ -76,6 +78,8 @@ class ImageClassifier:
         """
         with torch.no_grad():
             image_features = self.model.get_image_features(pixel_values=image_tensor)
+            if not isinstance(image_features, torch.Tensor):
+                image_features = image_features.pooler_output
             image_features = F.normalize(image_features, dim=-1)
 
         # 与各类别文本特征计算余弦相似度

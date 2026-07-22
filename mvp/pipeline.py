@@ -110,11 +110,14 @@ class SiglipEncoder:
         return np.concatenate(chunks).astype("float32")
 
     def encode_paths(self, paths: list[str], batch_size: int) -> np.ndarray:
-        images = []
-        for path in paths:
-            with Image.open(path) as image:
-                images.append(ImageOps.exif_transpose(image).convert("RGB"))
-        return self.encode(images, batch_size)
+        chunks = []
+        for start in range(0, len(paths), batch_size):
+            images = []
+            for path in paths[start : start + batch_size]:
+                with Image.open(path) as image:
+                    images.append(ImageOps.exif_transpose(image).convert("RGB"))
+            chunks.append(self.encode(images, batch_size))
+        return np.concatenate(chunks).astype("float32")
 
 
 def group_split(frame: pd.DataFrame, seed: int) -> np.ndarray:

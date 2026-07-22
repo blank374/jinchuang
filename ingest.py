@@ -53,9 +53,10 @@ def load_annotations(annotation_path: str):
         reader = csv.DictReader(f)
         for row in reader:
             file_path = row["file_path"].replace("\\", "/")
+            image_type = row.get("image_type") or os.path.splitext(os.path.basename(file_path))[0]
             annotations[file_path] = {
                 "loan_id": row.get("loan_id", ""),
-                "image_type": row.get("image_type", ""),
+                "image_type": image_type,
                 "business_type": row.get("business_type", ""),
                 "similar_group": row.get("similar_group", ""),
                 "is_similar_pair": row.get("is_similar_pair", "0") == "1",
@@ -117,7 +118,8 @@ def get_category_from_type(image_type: str):
 
 
 def ingest(config: dict, data_dir: str, force_rebuild: bool = False,
-           index_type: str = None, annotations_file: str = None):
+           index_type: str = None, annotations_file: str = None,
+           sign_only: bool = False):
     """批量入库主函数"""
     # 索引类型
     if index_type is None:
@@ -170,6 +172,14 @@ def ingest(config: dict, data_dir: str, force_rebuild: bool = False,
         return
 
     print(f"找到 {len(image_files)} 张图片，开始处理...")
+
+    if sign_only and annotations:
+        before_filter = len(image_files)
+        image_files = [
+            img_path for img_path in image_files
+            if annotations.get(get_rel_path(img_path, data_dir), {}).get("image_type") == "face_signing"
+        ]
+        print(f"sign_only: {before_filter} -> {len(image_files)} face_signing images")
 
     total = len(image_files)
     success = 0
@@ -287,6 +297,8 @@ def main():
     parser.add_argument("--index_type", type=str, default=None,
                         choices=["flat", "ivf"],
                         help="索引类型（默认: config.yaml 中的配置）")
+    parser.add_argument("--sign_only", action="store_true",
+                        help="Only index face_signing images listed in annotations.csv")
     args = parser.parse_args()
 
     config = load_config()
@@ -298,7 +310,8 @@ def main():
             args.annotations = default_annot
 
     ingest(config, args.data_dir, force_rebuild=args.force,
-           index_type=args.index_type, annotations_file=args.annotations)
+           index_type=args.index_type, annotations_file=args.annotations,
+           sign_only=args.sign_only)
 
 
 if __name__ == "__main__":

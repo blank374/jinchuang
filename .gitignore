@@ -22,9 +22,6 @@ faiss_index.bin
 *.pth
 *.ckpt
 
-# Local datasets
-data/
-
 # Evaluation and generated outputs
 eval_results/
 test_eval/
