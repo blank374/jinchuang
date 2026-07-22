@@ -119,6 +119,36 @@ class SiglipEncoder:
             chunks.append(self.encode(images, batch_size))
         return np.concatenate(chunks).astype("float32")
 
+    def encode_paths_cached(
+        self,
+        paths: list[str],
+        batch_size: int,
+        cache_path: Path,
+        throttle_seconds: float = 0.0,
+    ) -> np.ndarray:
+        expected_shape = (len(paths), self.model.config.vision_config.hidden_size)
+        if cache_path.exists():
+            cached = np.load(cache_path, mmap_mode="r")
+            if cached.shape == expected_shape:
+                print(f"  using cached embeddings: {cache_path}", flush=True)
+                return np.asarray(cached, dtype="float32")
+            print(f"  ignoring cache with unexpected shape {cached.shape}; expected {expected_shape}", flush=True)
+
+        embeddings = np.lib.format.open_memmap(cache_path, mode="w+", dtype="float32", shape=expected_shape)
+        total = len(paths)
+        for start in range(0, total, batch_size):
+            end = min(start + batch_size, total)
+            images = []
+            for path in paths[start:end]:
+                with Image.open(path) as image:
+                    images.append(ImageOps.exif_transpose(image).convert("RGB"))
+            embeddings[start:end] = self.encode(images, batch_size)
+            embeddings.flush()
+            print(f"  embeddings: {end}/{total}", flush=True)
+            if throttle_seconds > 0:
+                time.sleep(throttle_seconds)
+        return np.asarray(embeddings, dtype="float32")
+
 
 def group_split(frame: pd.DataFrame, seed: int) -> np.ndarray:
     groups = sorted(frame["loan_id"].unique())
@@ -376,8 +406,12 @@ def run(args: argparse.Namespace) -> None:
     print(f"[2/7] Loading {args.model_name} on {device}")
     encoder = SiglipEncoder(args.model_name, device)
     print(f"[3/7] Extracting {len(valid)} image embeddings")
-    embeddings = encoder.encode_paths(valid["path"].tolist(), args.batch_size)
-    np.save(output_dir / "image_embeddings.npy", embeddings)
+    embeddings = encoder.encode_paths_cached(
+        valid["path"].tolist(),
+        args.batch_size,
+        output_dir / "image_embeddings.npy",
+        args.throttle_seconds,
+    )
 
     classes = list(IMAGE_TYPES)
     labels = valid["image_type"].map({name: index for index, name in enumerate(classes)}).to_numpy()
@@ -477,6 +511,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--throttle-seconds", type=float, default=0.0, help="Sleep after each embedding batch to reduce system load.")
     parser.add_argument("--high-risk-threshold", type=float, default=DEFAULT_HIGH_RISK_THRESHOLD)
     parser.add_argument("--use-calibrated-high-threshold", action="store_true", help="Use the offline F1-selected threshold instead of the initial business threshold.")
     parser.add_argument("--medium-risk-threshold", type=float, default=DEFAULT_MEDIUM_RISK_THRESHOLD)

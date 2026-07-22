@@ -473,4 +473,4 @@ with gr.Blocks(title="金融影像智能相似度检测", theme=gr.themes.Soft()
     )
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)

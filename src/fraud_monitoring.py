@@ -57,9 +57,12 @@ def load_annotations(path: Path | str | None) -> pd.DataFrame:
         return pd.DataFrame()
     frame = pd.read_csv(annotation_path)
     if "file_path" in frame.columns:
+        normalized_paths = frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False)
         frame["dataset_loan_id"] = (
-            frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+            normalized_paths.str.split("/").str[0]
         )
+        if "image_type" not in frame.columns:
+            frame["image_type"] = normalized_paths.str.rsplit("/", n=1).str[-1].str.rsplit(".", n=1).str[0]
     return frame
 
 
@@ -90,15 +93,19 @@ def face_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
     customer_values = face["customer_id"] if "customer_id" in face.columns else (
         face["customer_no"] if "customer_no" in face.columns else pd.Series("", index=face.index)
     )
+    loan_values = face["loan_id"] if "loan_id" in face.columns else pd.Series("", index=face.index)
+    business_values = face["business_type"] if "business_type" in face.columns else pd.Series("", index=face.index)
+    similar_values = face["similar_group"] if "similar_group" in face.columns else pd.Series("", index=face.index)
+    pair_values = face["is_similar_pair"] if "is_similar_pair" in face.columns else pd.Series(0, index=face.index)
     result = pd.DataFrame(
         {
             "dataset_loan_id": face["dataset_loan_id"].astype(str),
-            "business_loan_id": face.get("loan_id", "").astype(str),
-            "business_type": face.get("business_type", "").fillna("").astype(str),
+            "business_loan_id": loan_values.fillna("").astype(str),
+            "business_type": business_values.fillna("").astype(str),
             "customer_id": customer_values.fillna("").astype(str),
             "customer_id_status": face.get("customer_id_status", pd.Series("", index=face.index)).fillna("").astype(str),
-            "similar_group": face.get("similar_group", "").fillna("").astype(str),
-            "is_similar_pair": face.get("is_similar_pair", 0),
+            "similar_group": similar_values.fillna("").astype(str),
+            "is_similar_pair": pair_values,
         }
     )
     return result.drop_duplicates("dataset_loan_id")

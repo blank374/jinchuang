@@ -1,0 +1,43 @@
+{
+  "face_threshold": 0.998,
+  "id_card_threshold": 0.9995,
+  "rows": 21075,
+  "name_column": "姓名",
+  "id_column": "身份证号",
+  "predicted_fraud_type_counts": {
+    "not_suspicious": 19585,
+    "same_customer_renewal_or_repeat": 86,
+    "cross_customer_fraud": 1404
+  },
+  "table_fraud_type_counts": {
+    "not_labeled_similar": 17424,
+    "same_customer_renewal_or_repeat": 313,
+    "cross_customer_fraud": 3322,
+    "labeled_similar_unknown_identity": 16
+  },
+  "customer_relation_counts": {
+    "unknown_customer": 360,
+    "same_customer": 314,
+    "cross_customer": 20401
+  },
+  "similar_group_detection_metrics": {
+    "tp": 820,
+    "fp": 670,
+    "fn": 2831,
+    "precision": 0.5503355704697986,
+    "recall": 0.22459600109559025,
+    "f1": 0.3190040848084031
+  },
+  "cross_customer_fraud_metrics": {
+    "tp": 734,
+    "fp": 670,
+    "fn": 2588,
+    "precision": 0.5227920227920227,
+    "recall": 0.2209512341962673,
+    "f1": 0.31062209056284384
+  },
+  "outputs": [
+    "outputs\\mvp\\multidim_similarity_report.csv",
+    "outputs\\mvp\\multidim_similarity_summary.json"
+  ]
+}

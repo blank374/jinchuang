@@ -1,0 +1,27 @@
+{
+  "photo_threshold": 0.98,
+  "rows": 21075,
+  "high_photo_rows": 7042,
+  "name_column": "姓名",
+  "id_column": "身份证号",
+  "decision_counts": {
+    "low_photo_similarity": 14033,
+    "same_customer_high_photo": 256,
+    "cross_customer_high_photo": 6758,
+    "high_photo_pending_identity": 16,
+    "identity_number_conflict_same_name": 12
+  },
+  "high_photo_decision_counts": {
+    "same_customer_high_photo": 256,
+    "cross_customer_high_photo": 6758,
+    "high_photo_pending_identity": 16,
+    "identity_number_conflict_same_name": 12
+  },
+  "high_photo_name_match": 268,
+  "high_photo_id_match": 256,
+  "high_photo_id_conflict": 6770,
+  "outputs": [
+    "outputs\\mvp\\triple_similarity_report.csv",
+    "outputs\\mvp\\triple_similarity_summary.json"
+  ]
+}

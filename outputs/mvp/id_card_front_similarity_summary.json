@@ -1,0 +1,49 @@
+{
+  "image_type": "id_card_front",
+  "items": 4215,
+  "topk_rows": 21075,
+  "relation_counts": {
+    "cross_customer": 19573,
+    "same_customer": 1132,
+    "unknown": 370
+  },
+  "top1_relation_counts": {
+    "cross_customer": 3304,
+    "same_customer": 837,
+    "unknown": 74
+  },
+  "at_0_95": {
+    "cross_customer": 19573,
+    "same_customer": 1132,
+    "unknown": 370
+  },
+  "at_0_98": {
+    "cross_customer": 19573,
+    "same_customer": 1132,
+    "unknown": 365
+  },
+  "same_customer_similarity": {
+    "count": 1132.0,
+    "mean": 0.9999999319706705,
+    "std": 1.1790285976114612e-07,
+    "min": 0.999999463558197,
+    "25%": 0.9999998807907104,
+    "50%": 1.0,
+    "75%": 1.0,
+    "max": 1.0
+  },
+  "cross_customer_similarity": {
+    "count": 19573.0,
+    "mean": 0.9969693260158033,
+    "std": 0.0007847608112915382,
+    "min": 0.9907476305961609,
+    "25%": 0.9965906143188477,
+    "50%": 0.9971153140068054,
+    "75%": 0.9975070953369141,
+    "max": 0.998794674873352
+  },
+  "outputs": [
+    "outputs\\mvp\\id_card_front_topk_with_identity.csv",
+    "outputs\\mvp\\id_card_front_similarity_summary.json"
+  ]
+}

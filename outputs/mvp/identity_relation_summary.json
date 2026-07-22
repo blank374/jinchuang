@@ -1,0 +1,27 @@
+{
+  "identity_rows": 4215,
+  "identity_status": {
+    "matched": 4143,
+    "id_number_not_found": 72
+  },
+  "topk_rows": 21075,
+  "relation_counts": {
+    "cross_customer": 20401,
+    "unknown": 360,
+    "same_customer": 314
+  },
+  "relation_counts_at_0_95": {
+    "cross_customer": 14143,
+    "same_customer": 301,
+    "unknown": 88
+  },
+  "relation_counts_at_0_98": {
+    "cross_customer": 6770,
+    "same_customer": 256,
+    "unknown": 16
+  },
+  "outputs": [
+    "outputs/mvp/customer_identity_map_from_annotations.csv",
+    "outputs/mvp/topk_with_identity.csv"
+  ]
+}

@@ -1,16 +1,16 @@
 {
   "evaluation_type": "competition_ground_truth",
   "note": "similar_group is used only as a de-identified offline ground truth for threshold calibration; it is never an online customer-relation feature.",
-  "positive_pairs": 33,
-  "negative_pairs": 221,
+  "positive_pairs": 1849,
+  "negative_pairs": 12920,
   "best_f1_threshold": {
-    "threshold": 0.97,
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1": 1.0,
-    "review_count": 33.0,
-    "tp": 33.0,
-    "fp": 0.0,
-    "fn": 0.0
+    "threshold": 0.98,
+    "precision": 0.4061711079943899,
+    "recall": 0.7831260140616549,
+    "f1": 0.5349094939046914,
+    "review_count": 3565.0,
+    "tp": 1448.0,
+    "fp": 2117.0,
+    "fn": 401.0
   }
 }

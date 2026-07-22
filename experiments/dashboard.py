@@ -175,11 +175,12 @@ def loan_business_frame(annotations: pd.DataFrame) -> pd.DataFrame:
     face = annotations[annotations["image_type"].eq("face_signing")].copy()
     if "dataset_loan_id" not in face.columns:
         face["dataset_loan_id"] = face["loan_id"]
+    business_type = face["business_type"] if "business_type" in face.columns else pd.Series("", index=face.index)
     result = pd.DataFrame(
         {
             "loan_id": face["dataset_loan_id"].astype(str),
             "business_loan_id": face["loan_id"].astype(str),
-            "business_type": face["business_type"].fillna("").astype(str),
+            "business_type": business_type.fillna("").astype(str),
             "similar_group": face["similar_group"].fillna("").astype(str),
             "is_similar_pair": face["is_similar_pair"],
         }
