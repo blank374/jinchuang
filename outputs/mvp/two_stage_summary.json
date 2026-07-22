@@ -7,6 +7,14 @@
       "background_hist_similarity",
       "local_structure_orb_ratio",
       "dhash_similarity",
+      "mirror_subject_region_hist_similarity",
+      "mirror_background_hist_similarity",
+      "mirror_dhash_similarity",
+      "equalized_dhash_similarity",
+      "edge_dhash_similarity",
+      "edge_hist_similarity",
+      "rotated_dhash_similarity",
+      "rotated_edge_dhash_similarity",
       "brightness_delta",
       "contrast_delta",
       "blur_ratio"
@@ -16,21 +24,21 @@
       "rows_test": 5269,
       "best_threshold": {
         "threshold": 0.4099999999999999,
-        "tp": 747,
-        "fp": 232,
-        "fn": 166,
-        "precision": 0.763023493360572,
-        "recall": 0.8181818181818182,
-        "f1": 0.7896405919661733
+        "tp": 774,
+        "fp": 237,
+        "fn": 139,
+        "precision": 0.7655786350148368,
+        "recall": 0.8477546549835706,
+        "f1": 0.8045738045738046
       },
       "metrics": {
         "threshold": 0.4099999999999999,
-        "accuracy": 0.9244638451319036,
-        "precision": 0.763023493360572,
-        "recall": 0.8181818181818182,
-        "f1": 0.7896405919661733,
-        "roc_auc": 0.9666831613958967,
-        "positive_predictions": 979
+        "accuracy": 0.9286392104763712,
+        "precision": 0.7655786350148368,
+        "recall": 0.8477546549835706,
+        "f1": 0.8045738045738046,
+        "roc_auc": 0.9720193068794084,
+        "positive_predictions": 1011
       }
     },
     "group_level_split": {
@@ -38,40 +46,40 @@
       "rows_test": 2089,
       "rows_dropped_cross_split": 6447,
       "best_threshold": {
-        "threshold": 0.09,
-        "tp": 880,
-        "fp": 189,
-        "fn": 58,
-        "precision": 0.823199251637044,
-        "recall": 0.9381663113006397,
-        "f1": 0.8769307424015944
+        "threshold": 0.06,
+        "tp": 912,
+        "fp": 231,
+        "fn": 26,
+        "precision": 0.7979002624671916,
+        "recall": 0.9722814498933902,
+        "f1": 0.8765016818837098
       },
       "metrics": {
-        "threshold": 0.09,
-        "accuracy": 0.8817616084250838,
-        "precision": 0.823199251637044,
-        "recall": 0.9381663113006397,
-        "f1": 0.8769307424015944,
-        "roc_auc": 0.9348577949275589,
-        "positive_predictions": 1069
+        "threshold": 0.06,
+        "accuracy": 0.8769746290090953,
+        "precision": 0.7979002624671916,
+        "recall": 0.9722814498933902,
+        "f1": 0.8765016818837098,
+        "roc_auc": 0.9304303849994164,
+        "positive_predictions": 1143
       }
     },
     "final_threshold_for_reports": 0.4099999999999999,
-    "final_predicted_similar": 3930
+    "final_predicted_similar": 3939
   },
   "stage2": {
     "purpose": "fraud/renewal type explanation for Stage-1 similar pairs",
     "predicted_type_counts": {
       "same_customer_repeat_review": 302,
-      "cross_customer_fraud": 3607,
+      "cross_customer_fraud": 3614,
       "high_similarity_pending_identity": 14,
-      "same_name_cross_id_fraud": 6,
+      "same_name_cross_id_fraud": 8,
       "normal_renewal_similarity": 1
     },
     "table_type_counts_on_predicted_similar": {
       "same_customer_repeat_review": 302,
-      "not_labeled_similar": 556,
-      "cross_customer_fraud": 3071,
+      "not_labeled_similar": 491,
+      "cross_customer_fraud": 3145,
       "normal_renewal_similarity": 1
     }
   },

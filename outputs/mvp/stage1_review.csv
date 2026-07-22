@@ -1,0 +1,16 @@
+﻿query_loan_id,match_loan_id,decision,note
+loan_3717,loan_1351,确认相似,stage1_fn_review
+loan_3760,loan_1042,确认相似,stage1_fn_review
+loan_3230,loan_0261,确认相似,stage1_fn_review
+loan_3933,loan_1306,确认相似,stage1_fn_review
+loan_3670,loan_0998,确认相似,stage1_fn_review
+loan_3735,loan_0403,确认相似,stage1_fn_review
+loan_3554,loan_3191,确认相似,stage1_fp_review
+loan_1875,loan_0370,确认相似,stage1_fp_review
+loan_3546,loan_3156,确认相似,stage1_fp_review
+loan_1793,loan_0247,确认相似,stage1_fp_review
+loan_4060,loan_3123,确认相似,stage1_fp_review
+loan_4115,loan_3241,确认相似,stage1_fp_review
+loan_0627,loan_1784,确认相似,stage1_fp_review
+loan_1895,loan_3976,确认相似,stage1_fp_review
+loan_3789,loan_1771,确认相似,stage1_fp_review

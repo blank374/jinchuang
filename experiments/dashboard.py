@@ -79,6 +79,14 @@ FIELD_LABELS = {
     "background_hist_similarity": "背景相似度",
     "local_structure_orb_ratio": "局部结构匹配",
     "dhash_similarity": "感知哈希相似度",
+    "mirror_subject_region_hist_similarity": "镜像主体相似度",
+    "mirror_background_hist_similarity": "镜像背景相似度",
+    "mirror_dhash_similarity": "镜像感知哈希相似度",
+    "equalized_dhash_similarity": "均衡化感知哈希相似度",
+    "edge_dhash_similarity": "边缘哈希相似度",
+    "edge_hist_similarity": "边缘结构相似度",
+    "rotated_dhash_similarity": "旋转感知哈希相似度",
+    "rotated_edge_dhash_similarity": "旋转边缘哈希相似度",
     "brightness_delta": "亮度差",
     "contrast_delta": "对比度差",
     "blur_ratio": "清晰度比例",
@@ -93,6 +101,55 @@ FIELD_LABELS = {
     "id_conflict": "身份证冲突",
     "same_iddd_pair": "same_iddd命中",
 }
+
+ERROR_TYPE_LABELS = {
+    "TP": "命中正确",
+    "FP": "误报：模型判相似，CSV不相似",
+    "FN": "漏报：CSV相似，模型未命中",
+    "TN": "排除正确",
+}
+
+STAGE2_TYPE_LABELS = {
+    "cross_customer_fraud": "跨客户疑似欺诈",
+    "same_customer_repeat_review": "同客户重复/异常复核",
+    "normal_renewal_similarity": "正常续贷相似",
+    "same_name_cross_id_fraud": "同名异证重点复核",
+    "high_similarity_pending_identity": "高相似待身份核验",
+    "same_name_pending_identity": "同名待身份核验",
+    "not_suspicious": "非可疑",
+    "not_labeled_similar": "CSV未标相似",
+    "labeled_similar_unknown_identity": "CSV相似但身份未知",
+    "same_customer_renewal_or_repeat": "同客户续贷/重复提交",
+}
+
+EVIDENCE_LABELS = {
+    "global_semantic_similarity": "整体内容接近",
+    "subject_region_hist_similarity": "人物主体区域接近",
+    "background_hist_similarity": "背景环境接近",
+    "local_structure_orb_ratio": "局部结构/同源痕迹",
+    "dhash_similarity": "感知哈希/翻拍裁剪痕迹",
+    "mirror_subject_region_hist_similarity": "镜像后人物主体接近",
+    "mirror_background_hist_similarity": "镜像后背景环境接近",
+    "mirror_dhash_similarity": "镜像后感知哈希接近",
+    "equalized_dhash_similarity": "亮度均衡后仍接近",
+    "edge_dhash_similarity": "边缘哈希结构接近",
+    "edge_hist_similarity": "边缘分布结构接近",
+    "rotated_dhash_similarity": "小角度旋转后仍接近",
+    "rotated_edge_dhash_similarity": "旋转后边缘结构接近",
+    "brightness_delta": "亮度差异",
+    "contrast_delta": "对比度差异",
+    "blur_ratio": "清晰度一致性",
+}
+
+
+def stage2_type_label(value: object) -> str:
+    text = str(value or "")
+    return STAGE2_TYPE_LABELS.get(text, text or "无")
+
+
+def evidence_label(value: object) -> str:
+    text = str(value or "")
+    return EVIDENCE_LABELS.get(text, text)
 
 FRAUD_MONITORING_REQUIRED_COLUMNS = [
     "fraud_score",
@@ -541,6 +598,7 @@ with tab_similarity_review:
         stage1_view.loc[stage1_view["pred_bool"] & stage1_view["label_bool"], "error_type"] = "TP"
         stage1_view.loc[stage1_view["pred_bool"] & ~stage1_view["label_bool"], "error_type"] = "FP"
         stage1_view.loc[~stage1_view["pred_bool"] & stage1_view["label_bool"], "error_type"] = "FN"
+        stage1_view["error_type_label"] = stage1_view["error_type"].map(ERROR_TYPE_LABELS).fillna(stage1_view["error_type"])
         stage1_view["pair_key"] = [pair_key(a, b) for a, b in zip(stage1_view["query_loan_id"], stage1_view["match_loan_id"])]
 
         if not stage2.empty:
@@ -554,6 +612,8 @@ with tab_similarity_review:
         for column in ["stage2_predicted_type", "stage2_table_type", "name_match", "id_match", "id_conflict", "same_iddd_pair"]:
             if column not in stage1_view.columns:
                 stage1_view[column] = ""
+        stage1_view["stage2_predicted_type_label"] = stage1_view["stage2_predicted_type"].map(stage2_type_label)
+        stage1_view["stage2_table_type_label"] = stage1_view["stage2_table_type"].map(stage2_type_label)
 
         pair_metrics = two_stage_summary.get("stage1", {}).get("pair_level_split", {}).get("metrics", {})
         group_metrics = two_stage_summary.get("stage1", {}).get("group_level_split", {}).get("metrics", {})
@@ -564,20 +624,25 @@ with tab_similarity_review:
         c4.metric("Pair F1", f'{float(pair_metrics.get("f1", 0)):.1%}')
         c5.metric("相似候选", int(two_stage_summary.get("stage1", {}).get("final_predicted_similar", 0)))
 
-        counts = stage1_view["error_type"].value_counts().reindex(["TP", "FP", "FN", "TN"]).fillna(0).astype(int)
+        counts = stage1_view["error_type_label"].value_counts().reindex([ERROR_TYPE_LABELS[key] for key in ["TP", "FP", "FN", "TN"]]).fillna(0).astype(int)
         st.markdown("**预测与 CSV similar_group 对比**")
         st.bar_chart(counts)
 
         f1, f2, f3, f4 = st.columns([1, 1, 1, 2])
         with f1:
-            selected_error = st.selectbox("复核类型", ["全部", "FP", "FN", "TP", "TN"], index=1)
+            error_options = ["全部"] + [ERROR_TYPE_LABELS[key] for key in ["FP", "FN", "TP", "TN"]]
+            selected_error_label = st.selectbox("复核类型", error_options, index=1)
+            reverse_error_labels = {value: key for key, value in ERROR_TYPE_LABELS.items()}
+            selected_error = reverse_error_labels.get(selected_error_label, "全部")
         with f2:
             min_probability = st.slider("最低相似概率", 0.0, 1.0, 0.0, 0.01)
         with f3:
             max_rows = st.number_input("最多显示", min_value=20, max_value=1000, value=200, step=20)
         with f4:
-            type_options = ["全部"] + sorted([value for value in stage1_view["stage2_predicted_type"].dropna().astype(str).unique().tolist() if value])
-            selected_stage2_type = st.selectbox("阶段二类型", type_options)
+            type_values = sorted([value for value in stage1_view["stage2_predicted_type"].dropna().astype(str).unique().tolist() if value])
+            type_options = ["全部"] + [stage2_type_label(value) for value in type_values]
+            selected_stage2_type_label = st.selectbox("阶段二类型", type_options)
+            selected_stage2_type = {stage2_type_label(value): value for value in type_values}.get(selected_stage2_type_label, "全部")
 
         review_view = stage1_view[stage1_view["stage1_similarity_probability"] >= min_probability].copy()
         if selected_error != "全部":
@@ -587,19 +652,27 @@ with tab_similarity_review:
         review_view = review_view.sort_values(["error_type", "stage1_similarity_probability"], ascending=[True, False]).head(int(max_rows))
 
         table_columns = [
-            "error_type",
+            "error_type_label",
             "query_loan_id",
             "match_loan_id",
             "stage1_similarity_probability",
             "stage1_predicted_similar",
             "stage1_label",
-            "stage2_predicted_type",
-            "stage2_table_type",
+            "stage2_predicted_type_label",
+            "stage2_table_type_label",
             "global_semantic_similarity",
             "subject_region_hist_similarity",
             "background_hist_similarity",
             "local_structure_orb_ratio",
             "dhash_similarity",
+            "mirror_subject_region_hist_similarity",
+            "mirror_background_hist_similarity",
+            "mirror_dhash_similarity",
+            "equalized_dhash_similarity",
+            "edge_dhash_similarity",
+            "edge_hist_similarity",
+            "rotated_dhash_similarity",
+            "rotated_edge_dhash_similarity",
             "brightness_delta",
             "contrast_delta",
             "blur_ratio",
@@ -608,7 +681,7 @@ with tab_similarity_review:
 
         if not review_view.empty:
             labels = [
-                f'{row.error_type} | {row.query_loan_id} ↔ {row.match_loan_id} | P={row.stage1_similarity_probability:.3f}'
+                f'{row.error_type_label} | {row.query_loan_id} ↔ {row.match_loan_id} | P={row.stage1_similarity_probability:.3f}'
                 for row in review_view.itertuples()
             ]
             selected_label = st.selectbox("查看复核详情", labels)
@@ -621,25 +694,33 @@ with tab_similarity_review:
 
             d1, d2, d3, d4 = st.columns(4)
             d1.metric("相似概率", f'{float(row["stage1_similarity_probability"]):.3f}')
-            d2.metric("错误类型", row["error_type"])
+            d2.metric("复核类型", row["error_type_label"])
             d3.metric("CSV标签", "相似" if bool(row["label_bool"]) else "不相似")
             d4.metric("模型预测", "相似" if bool(row["pred_bool"]) else "不相似")
 
-            st.markdown("**多维图像证据**")
+            st.markdown("**多维图像依据**")
             evidence_columns = [
                 "global_semantic_similarity",
                 "subject_region_hist_similarity",
                 "background_hist_similarity",
                 "local_structure_orb_ratio",
                 "dhash_similarity",
+                "mirror_subject_region_hist_similarity",
+                "mirror_background_hist_similarity",
+                "mirror_dhash_similarity",
+                "equalized_dhash_similarity",
+                "edge_dhash_similarity",
+                "edge_hist_similarity",
+                "rotated_dhash_similarity",
+                "rotated_edge_dhash_similarity",
                 "brightness_delta",
                 "contrast_delta",
                 "blur_ratio",
             ]
             evidence = pd.DataFrame(
-                [{"feature": column, "value": row.get(column, "")} for column in evidence_columns]
+                [{"依据": evidence_label(column), "字段": column, "数值": row.get(column, "")} for column in evidence_columns]
             )
-            st.dataframe(with_chinese_columns(evidence), width="stretch", hide_index=True)
+            st.dataframe(evidence, width="stretch", hide_index=True)
 
             st.markdown("**阶段二业务解释**")
             st.dataframe(
@@ -647,8 +728,8 @@ with tab_similarity_review:
                     pd.DataFrame(
                         [
                             {
-                                "stage2_predicted_type": row.get("stage2_predicted_type", ""),
-                                "stage2_table_type": row.get("stage2_table_type", ""),
+                                "stage2_predicted_type": row.get("stage2_predicted_type_label", ""),
+                                "stage2_table_type": row.get("stage2_table_type_label", ""),
                                 "name_match": row.get("name_match", ""),
                                 "id_match": row.get("id_match", ""),
                                 "id_conflict": row.get("id_conflict", ""),
@@ -706,13 +787,16 @@ with tab_fraud:
             st.info("暂无复核优先级统计。")
     if not stage2.empty:
         st.markdown("**两阶段风险类型解释（Stage 2）**")
+        stage2_display = stage2.copy()
+        stage2_display["stage2_predicted_type_label"] = stage2_display["stage2_predicted_type"].map(stage2_type_label)
+        stage2_display["stage2_table_type_label"] = stage2_display["stage2_table_type"].map(stage2_type_label)
         stage2_left, stage2_right = st.columns(2)
         with stage2_left:
             st.caption("模型预测类型")
-            st.bar_chart(stage2["stage2_predicted_type"].fillna("unknown").value_counts())
+            st.bar_chart(stage2_display["stage2_predicted_type_label"].fillna("未知").value_counts())
         with stage2_right:
             st.caption("CSV 对应类型")
-            st.bar_chart(stage2["stage2_table_type"].fillna("unknown").value_counts())
+            st.bar_chart(stage2_display["stage2_table_type_label"].fillna("未知").value_counts())
 
     type_options = ["全部", "陌生人跨客户疑似欺诈", "同客户重复提交", "低风险候选"]
     selected_type = st.selectbox("监测类型", type_options)

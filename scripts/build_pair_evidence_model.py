@@ -37,7 +37,16 @@ class ImageEvidence:
     hist: np.ndarray
     center_hist: np.ndarray
     background_hist: np.ndarray
+    mirror_hist: np.ndarray
+    mirror_center_hist: np.ndarray
+    mirror_background_hist: np.ndarray
     dhash: np.ndarray
+    mirror_dhash: np.ndarray
+    equalized_dhash: np.ndarray
+    edge_dhash: np.ndarray
+    edge_hist: np.ndarray
+    rotated_dhashes: list[np.ndarray]
+    rotated_edge_dhashes: list[np.ndarray]
     orb_desc: np.ndarray | None
     brightness: float
     contrast: float
@@ -91,6 +100,12 @@ def dhash_bits(gray: np.ndarray) -> np.ndarray:
     return (small[:, 1:] > small[:, :-1]).astype(np.uint8).reshape(-1)
 
 
+def rotate_gray(gray: np.ndarray, angle: float) -> np.ndarray:
+    height, width = gray.shape[:2]
+    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1.0)
+    return cv2.warpAffine(gray, matrix, (width, height), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
 def hamming_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return 1.0 - float(np.mean(a != b))
 
@@ -101,12 +116,25 @@ def load_image_evidence(path: str, orb: cv2.ORB) -> ImageEvidence:
         raise ValueError(f"Could not read image: {path}")
     image = cv2.resize(image, (256, 256), interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    equalized_gray = cv2.equalizeHist(gray)
+    edges = cv2.Canny(gray, 80, 160)
+    rotated_grays = [rotate_gray(gray, angle) for angle in (-15, -8, 8, 15)]
+    rotated_edges = [cv2.Canny(rotated, 80, 160) for rotated in rotated_grays]
+    mirror_gray = cv2.flip(gray, 1)
     center = gray[64:192, 64:192]
+    mirror_center = mirror_gray[64:192, 64:192]
     top = gray[:56, :]
     bottom = gray[200:, :]
     left = gray[:, :56]
     right = gray[:, 200:]
     background = np.concatenate([top.reshape(-1), bottom.reshape(-1), left.reshape(-1), right.reshape(-1)]).reshape(-1, 1)
+    mirror_top = mirror_gray[:56, :]
+    mirror_bottom = mirror_gray[200:, :]
+    mirror_left = mirror_gray[:, :56]
+    mirror_right = mirror_gray[:, 200:]
+    mirror_background = np.concatenate(
+        [mirror_top.reshape(-1), mirror_bottom.reshape(-1), mirror_left.reshape(-1), mirror_right.reshape(-1)]
+    ).reshape(-1, 1)
     _, desc = orb.detectAndCompute(gray, None)
     return ImageEvidence(
         path=path,
@@ -116,7 +144,16 @@ def load_image_evidence(path: str, orb: cv2.ORB) -> ImageEvidence:
         hist=histogram(gray),
         center_hist=histogram(center),
         background_hist=histogram(background),
+        mirror_hist=histogram(mirror_gray),
+        mirror_center_hist=histogram(mirror_center),
+        mirror_background_hist=histogram(mirror_background),
         dhash=dhash_bits(gray),
+        mirror_dhash=dhash_bits(mirror_gray),
+        equalized_dhash=dhash_bits(equalized_gray),
+        edge_dhash=dhash_bits(edges),
+        edge_hist=histogram(edges),
+        rotated_dhashes=[dhash_bits(rotated) for rotated in rotated_grays],
+        rotated_edge_dhashes=[dhash_bits(rotated) for rotated in rotated_edges],
         orb_desc=desc,
         brightness=float(gray.mean()),
         contrast=float(gray.std()),
@@ -222,6 +259,31 @@ def main() -> None:
                 "background_hist_similarity": hist_similarity(query.background_hist, match.background_hist),
                 "local_structure_orb_ratio": orb_match_ratio(query.orb_desc, match.orb_desc),
                 "dhash_similarity": hamming_similarity(query.dhash, match.dhash),
+                "mirror_subject_region_hist_similarity": max(
+                    hist_similarity(query.mirror_center_hist, match.center_hist),
+                    hist_similarity(query.center_hist, match.mirror_center_hist),
+                ),
+                "mirror_background_hist_similarity": max(
+                    hist_similarity(query.mirror_background_hist, match.background_hist),
+                    hist_similarity(query.background_hist, match.mirror_background_hist),
+                ),
+                "mirror_dhash_similarity": max(
+                    hamming_similarity(query.mirror_dhash, match.dhash),
+                    hamming_similarity(query.dhash, match.mirror_dhash),
+                ),
+                "equalized_dhash_similarity": hamming_similarity(query.equalized_dhash, match.equalized_dhash),
+                "edge_dhash_similarity": hamming_similarity(query.edge_dhash, match.edge_dhash),
+                "edge_hist_similarity": hist_similarity(query.edge_hist, match.edge_hist),
+                "rotated_dhash_similarity": max(
+                    [hamming_similarity(candidate, match.dhash) for candidate in query.rotated_dhashes]
+                    + [hamming_similarity(query.dhash, candidate) for candidate in match.rotated_dhashes]
+                    + [hamming_similarity(query.dhash, match.dhash)]
+                ),
+                "rotated_edge_dhash_similarity": max(
+                    [hamming_similarity(candidate, match.edge_dhash) for candidate in query.rotated_edge_dhashes]
+                    + [hamming_similarity(query.edge_dhash, candidate) for candidate in match.rotated_edge_dhashes]
+                    + [hamming_similarity(query.edge_dhash, match.edge_dhash)]
+                ),
                 "brightness_delta": abs(query.brightness - match.brightness),
                 "contrast_delta": abs(query.contrast - match.contrast),
                 "blur_ratio": min(query.blur, match.blur) / max(query.blur, match.blur, 1e-6),
@@ -241,6 +303,14 @@ def main() -> None:
         "background_hist_similarity",
         "local_structure_orb_ratio",
         "dhash_similarity",
+        "mirror_subject_region_hist_similarity",
+        "mirror_background_hist_similarity",
+        "mirror_dhash_similarity",
+        "equalized_dhash_similarity",
+        "edge_dhash_similarity",
+        "edge_hist_similarity",
+        "rotated_dhash_similarity",
+        "rotated_edge_dhash_similarity",
         "brightness_delta",
         "contrast_delta",
         "blur_ratio",
