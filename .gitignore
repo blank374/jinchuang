@@ -1,45 +1,41 @@
-# Python 缓存
+# Python cache and build artifacts
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.egg-info/
-dist/
 build/
+dist/
 
-# 虚拟环境
-venv/
+# Virtual environments
 .venv/
+venv/
 env/
 
-# 项目数据（赛题数据集，ZIP 包约 400MB）
-#data/
+# Local app/runtime state
+.gradio/
+*.log
+*.pid
 
-# FAISS 索引与模型检查点
+# Model/index/checkpoint artifacts
 checkpoints/
 faiss_index.bin
+*.pt
+*.pth
+*.ckpt
 
-# 评估输出
+# Evaluation and generated outputs
 eval_results/
 test_eval/
-
-# 运行时报告
 reports/
 
-# 提交包与生成文档
+# Submission/package artifacts
 Submission.zip
-部署文档.pdf
+*.zip
 
-# IDE 配置
+# IDE and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# 系统生成文件
 desktop.ini
 Thumbs.db
 .DS_Store
-
-# 日志
-*.log
-gen_replace_407_progress.json

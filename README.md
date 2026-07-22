@@ -272,7 +272,7 @@ training:
 - 检索评估报告：[eval_results/retrieval_evaluation.md](eval_results/retrieval_evaluation.md)
 - 完整阈值分析：[eval_results/evaluation_report.md](eval_results/evaluation_report.md)
 - PR 曲线图：[eval_results/pr_curve.png](eval_results/pr_curve.png)
-- 技术报告（含消融实验）：[技术报告.md](技术报告.md)
+- 技术报告（含消融实验）：[docs/技术报告.md](docs/技术报告.md)
 
 ### 运行评估
 
@@ -309,9 +309,6 @@ Finance_Image_Similarity/
 ├── config.yaml              # 系统配置文件
 ├── requirements.txt         # Python 依赖
 ├── README.md                # 本文件
-├── 技术报告.md               # 技术报告（含消融实验与结果分析）
-├── 部署文档.pdf              # 部署与运维说明
-├── 23-多模态技术与数据治理赛道-无锡农商行-基于多模态大模型的金融影像智能相似度检测模型.docx
 ├── src/
 │   ├── __init__.py
 │   ├── model.py             # SigLIP2 特征提取器
@@ -327,6 +324,15 @@ Finance_Image_Similarity/
 │   ├── loan_001/            # 贷款 1 影像
 │   ├── loan_002/            # 贷款 2 影像
 │   └── ...
+├── scripts/
+│   ├── build_identity_map.py # 身份映射构建工具
+│   ├── data_prep/           # 数据生成、修复、重排等一次性脚本
+│   └── maintenance/         # 数据检查、压缩、清理工具
+├── docs/
+│   ├── 技术报告.md           # 技术报告（含消融实验与结果分析）
+│   ├── risk_policy.md       # 风控策略说明
+│   ├── recent_submission_distribution.md
+│   └── 23-多模态技术与数据治理赛道-无锡农商行-基于多模态大模型的金融影像智能相似度检测模型.docx
 ├── checkpoints/
 │   ├── faiss_index.bin      # FAISS 索引文件
 │   ├── faiss_index_meta.pkl # 索引元数据
@@ -337,6 +343,8 @@ Finance_Image_Similarity/
 │   ├── evaluation_report.md
 │   ├── retrieval_evaluation.md
 │   └── pr_curve.png
+├── outputs/                 # MVP 与实验输出
+├── demo_output/             # 演示样例输出
 └── reports/                 # 批量检测 CSV 报告输出（运行时自动创建）
 ```
 
