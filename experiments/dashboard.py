@@ -102,7 +102,8 @@ FIELD_LABELS = {
     "visual_override_reason": "视觉兜底原因",
     "stage1_decision_source": "阶段一判定来源",
     "stage1_predicted_similar": "阶段一预测相似",
-    "stage1_label": "CSV相似标签",
+    "stage1_label": "CSV原始相似标签",
+    "csv_label_status": "CSV标注状态",
     "same_similar_group": "同similar_group",
     "stage2_predicted_type": "阶段二预测类型",
     "stage2_table_type": "CSV对应类型",
@@ -114,7 +115,7 @@ FIELD_LABELS = {
 
 ERROR_TYPE_LABELS = {
     "TP": "命中正确",
-    "FP": "误报：模型判相似，CSV不相似",
+    "FP": "CSV漏标候选：模型判相似，CSV未标",
     "FN": "漏报：CSV相似，模型未命中",
     "TN": "排除正确",
 }
@@ -223,8 +224,27 @@ def find_annotations_path(summary: dict) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def outputs_signature() -> tuple[tuple[str, float, int], ...]:
+    names = [
+        "stage1_similarity_report.csv",
+        "stage2_fraud_type_report.csv",
+        "two_stage_summary.json",
+        "review_labels.csv",
+        "stage1_review.csv",
+    ]
+    signature = []
+    for name in names:
+        path = OUTPUT / name
+        if path.exists():
+            stat = path.stat()
+            signature.append((name, stat.st_mtime, stat.st_size))
+        else:
+            signature.append((name, 0.0, 0))
+    return tuple(signature)
+
+
 @st.cache_data(show_spinner=False)
-def load_data() -> dict:
+def load_data(_signature: tuple[tuple[str, float, int], ...]) -> dict:
     require_outputs()
     summary = read_json("run_summary.json")
     metrics = read_json("classification_metrics.json")
@@ -257,6 +277,8 @@ def load_data() -> dict:
         "two_stage_summary": two_stage_summary,
         "stage1": stage1,
         "stage2": stage2,
+        "stage1_report_mtime": stage1_path.stat().st_mtime if stage1_path.exists() else 0,
+        "stage1_report_size": stage1_path.stat().st_size if stage1_path.exists() else 0,
         "thresholds": thresholds,
         "review_labels": review_labels,
         "annotations": annotations,
@@ -431,7 +453,7 @@ def read_optional_csv(path: Path, columns: list[str]) -> pd.DataFrame:
 
 def review_decision_to_label(value: object) -> int | None:
     text = str(value or "").strip()
-    if text in {"确认相似", "相似", "similar", "true", "1", "yes"}:
+    if text in {"确认相似", "CSV漏标，确认相似", "相似", "similar", "true", "1", "yes"}:
         return 1
     if text in {"确认不相似", "误报/不采用", "不相似", "not_similar", "false", "0", "no"}:
         return 0
@@ -445,6 +467,9 @@ def load_manual_review_pairs() -> pd.DataFrame:
         ["query_loan_id", "match_loan_id", "decision", "note"],
     )
     for item in stage1_reviews.itertuples(index=False):
+        note = str(getattr(item, "note", ""))
+        if note == "stage1_pair_label_confirmed_true":
+            continue
         label = review_decision_to_label(getattr(item, "decision", ""))
         if label is None:
             continue
@@ -454,7 +479,7 @@ def load_manual_review_pairs() -> pd.DataFrame:
                 "match_loan_id": str(item.match_loan_id),
                 "is_similar": label,
                 "decision": str(item.decision),
-                "note": str(getattr(item, "note", "")),
+                "note": note,
                 "source": "stage1_review",
             }
         )
@@ -483,6 +508,22 @@ def load_manual_review_pairs() -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     frame["pair_key"] = [pair_key(a, b) for a, b in zip(frame["query_loan_id"], frame["match_loan_id"])]
     return frame.drop_duplicates("pair_key", keep="last").reset_index(drop=True)
+
+
+def load_stage1_pair_label_keys() -> set[str]:
+    reviews = read_optional_csv(
+        OUTPUT / "stage1_review.csv",
+        ["query_loan_id", "match_loan_id", "decision", "note"],
+    )
+    if reviews.empty:
+        return set()
+    labels = reviews["decision"].map(review_decision_to_label)
+    pair_label_mask = reviews["note"].astype(str).eq("stage1_pair_label_confirmed_true")
+    positive_mask = labels.eq(1)
+    return {
+        pair_key(row.query_loan_id, row.match_loan_id)
+        for row in reviews.loc[pair_label_mask & positive_mask].itertuples(index=False)
+    }
 
 
 RENEWAL_EDIT_TYPES = {"bg", "hair", "shirt", "shirt_bg", "background", "clothes", "background_change", "hair_change", "clothes_change"}
@@ -681,13 +722,21 @@ def bool_series(series: pd.Series) -> pd.Series:
     return series.astype(str).str.lower().isin({"true", "1", "yes"})
 
 
+def csv_label_status(row: pd.Series) -> str:
+    if bool(row["label_bool"]):
+        return "CSV已标相似"
+    if bool(row["pred_bool"]):
+        return "CSV未标相似"
+    return "CSV未标相似关系"
+
+
 @st.cache_resource(show_spinner=False)
 def load_runtime(output_dir: str):
     _, get_runtime = load_inference_functions()
     return get_runtime(output_dir)
 
 
-data = load_data()
+data = load_data(outputs_signature())
 summary = data["summary"]
 metrics = data["metrics"]
 threshold_metadata = data["threshold_metadata"]
@@ -864,16 +913,23 @@ with tab_similarity_review:
         stage1_view = stage1.copy()
         stage1_view["pred_bool"] = bool_series(stage1_view["stage1_predicted_similar"])
         stage1_view["label_bool"] = bool_series(stage1_view["stage1_label"])
+        stage1_view["pair_key"] = [pair_key(a, b) for a, b in zip(stage1_view["query_loan_id"], stage1_view["match_loan_id"])]
+        pair_label_keys = load_stage1_pair_label_keys()
+        if pair_label_keys:
+            pair_label_mask = stage1_view["pair_key"].isin(pair_label_keys)
+            stage1_view.loc[pair_label_mask, "label_bool"] = True
+            stage1_view.loc[pair_label_mask, "stage1_label"] = 1
         stage1_view["error_type"] = "TN"
         stage1_view.loc[stage1_view["pred_bool"] & stage1_view["label_bool"], "error_type"] = "TP"
         stage1_view.loc[stage1_view["pred_bool"] & ~stage1_view["label_bool"], "error_type"] = "FP"
         stage1_view.loc[~stage1_view["pred_bool"] & stage1_view["label_bool"], "error_type"] = "FN"
         stage1_view["error_type_label"] = stage1_view["error_type"].map(ERROR_TYPE_LABELS).fillna(stage1_view["error_type"])
-        stage1_view["pair_key"] = [pair_key(a, b) for a, b in zip(stage1_view["query_loan_id"], stage1_view["match_loan_id"])]
+        stage1_view["csv_label_status"] = stage1_view.apply(csv_label_status, axis=1)
 
         if not stage2.empty:
             stage2_keys = stage2.copy()
             stage2_keys["pair_key"] = [pair_key(a, b) for a, b in zip(stage2_keys["query_loan_id"], stage2_keys["match_loan_id"])]
+            stage2_keys = stage2_keys.drop_duplicates("pair_key", keep="first")
             stage1_view = stage1_view.merge(
                 stage2_keys[["pair_key", "stage2_predicted_type", "stage2_table_type", "name_match", "id_match", "id_conflict", "same_iddd_pair"]],
                 on="pair_key",
@@ -893,6 +949,18 @@ with tab_similarity_review:
         c3.metric("Group Recall", f'{float(group_metrics.get("recall", 0)):.1%}')
         c4.metric("Pair F1", f'{float(pair_metrics.get("f1", 0)):.1%}')
         c5.metric("相似候选", int(two_stage_summary.get("stage1", {}).get("final_predicted_similar", 0)))
+
+        live_counts = stage1_view["error_type"].value_counts().reindex(["TP", "FP", "FN", "TN"]).fillna(0).astype(int)
+        live1, live2, live3, live4 = st.columns(4)
+        live1.metric("当前 TP", int(live_counts.get("TP", 0)))
+        live2.metric("CSV漏标候选", int(live_counts.get("FP", 0)))
+        live3.metric("当前 FN", int(live_counts.get("FN", 0)))
+        live4.metric("当前 TN", int(live_counts.get("TN", 0)))
+        st.caption(
+            f'当前复核页读取：outputs/mvp/stage1_similarity_report.csv | '
+            f'大小 {int(data["stage1_report_size"])} bytes | '
+            f'修改时间戳 {float(data["stage1_report_mtime"]):.0f}'
+        )
 
         st.markdown("**人工复核闭环**")
         r1, r2, r3, r4 = st.columns(4)
@@ -929,7 +997,7 @@ with tab_similarity_review:
         with f2:
             min_probability = st.slider("最低相似概率", 0.0, 1.0, 0.0, 0.01)
         with f3:
-            max_rows = st.number_input("最多显示", min_value=20, max_value=1000, value=200, step=20)
+            max_rows = st.number_input("最多显示", min_value=20, max_value=1000, value=1000, step=20)
         with f4:
             type_values = sorted([value for value in stage1_view["stage2_predicted_type"].dropna().astype(str).unique().tolist() if value])
             type_options = ["全部"] + [stage2_type_label(value) for value in type_values]
@@ -951,7 +1019,7 @@ with tab_similarity_review:
             "stage1_decision_source",
             "visual_override_reason",
             "stage1_predicted_similar",
-            "stage1_label",
+            "csv_label_status",
             "stage2_predicted_type_label",
             "stage2_table_type_label",
             "global_semantic_similarity",
@@ -994,7 +1062,7 @@ with tab_similarity_review:
             d1, d2, d3, d4 = st.columns(4)
             d1.metric("相似概率", f'{float(row["stage1_similarity_probability"]):.3f}')
             d2.metric("复核类型", row["error_type_label"])
-            d3.metric("CSV标签", "相似" if bool(row["label_bool"]) else "不相似")
+            d3.metric("CSV标注状态", row["csv_label_status"])
             d4.metric("模型预测", "相似" if bool(row["pred_bool"]) else "不相似")
 
             st.markdown("**多维图像依据**")
@@ -1049,7 +1117,14 @@ with tab_similarity_review:
             )
 
             with st.form("stage1_review_form"):
-                decision = st.radio("人工复核结论", ["确认相似", "确认不相似", "标签需检查", "暂不确定"], horizontal=True)
+                decision_options = ["CSV漏标，确认相似", "确认相似", "确认不相似", "标签需检查", "暂不确定"]
+                default_decision = "CSV漏标，确认相似" if row["error_type"] == "FP" else "确认相似"
+                decision = st.radio(
+                    "人工复核结论",
+                    decision_options,
+                    index=decision_options.index(default_decision),
+                    horizontal=True,
+                )
                 note = st.text_input("复核备注", value=f"stage1_{row['error_type'].lower()}_review")
                 submitted = st.form_submit_button("保存复核")
             if submitted:

@@ -1,12 +1,8 @@
 {
-  "source_annotations": "data\\annotations.csv",
-  "manual_pairs": 59,
-  "manual_positive": 48,
-  "manual_negative": 11,
-  "renewal_base_edges": 349,
-  "original_positive_edges": 2785,
-  "corrected_groups": 827,
-  "corrected_positive_loans": 2883,
-  "conflicting_manual_pairs": 0,
-  "manual_positive_pairs_split_by_negative_constraints": 0
+  "label_mode": "pair_level_stage1_label_only",
+  "note": "CSV-missing candidates are applied only as pair-level stage1 labels; similar_group is not merged or propagated.",
+  "new_fp_rows_set_true_this_run": 120,
+  "new_fp_unique_pairs_set_true_this_run": 61,
+  "stage1_review_rows": 265,
+  "reviewed_positive_stage1_rows": 523
 }

@@ -61,6 +61,8 @@ MANIPULATION_EDIT_TYPES = {"brightness", "contrast", "rotate", "rotation", "crop
 MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD = 0.95
 MIRROR_DHASH_OVERRIDE_THRESHOLD = 0.98
 MIRROR_PROBABILITY_FLOOR = 0.38
+POSITIVE_REVIEW_DECISIONS = {"确认相似", "CSV漏标，确认相似", "相似", "similar", "true", "1", "yes", "positive", "pair_label_positive"}
+NEGATIVE_REVIEW_DECISIONS = {"确认不相似", "误报/不采用", "不相似", "not_similar", "false", "0", "no"}
 
 
 def normalize_name(value: object) -> str:
@@ -69,6 +71,36 @@ def normalize_name(value: object) -> str:
 
 def dataset_loan_id_from_path(frame: pd.DataFrame) -> pd.Series:
     return frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+
+
+def pair_key(left: object, right: object) -> str:
+    return "|".join(sorted((str(left), str(right))))
+
+
+def review_decision_to_label(value: object) -> int | None:
+    text = str(value or "").strip()
+    if text in POSITIVE_REVIEW_DECISIONS:
+        return 1
+    if text in NEGATIVE_REVIEW_DECISIONS:
+        return 0
+    return None
+
+
+def load_pair_label_overrides(output_dir: Path) -> dict[str, int]:
+    path = output_dir / "stage1_review.csv"
+    if not path.exists():
+        return {}
+    reviews = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
+    required = {"query_loan_id", "match_loan_id", "decision"}
+    if not required.issubset(reviews.columns):
+        return {}
+    overrides: dict[str, int] = {}
+    for row in reviews.itertuples(index=False):
+        label = review_decision_to_label(getattr(row, "decision", ""))
+        if label is None:
+            continue
+        overrides[pair_key(getattr(row, "query_loan_id"), getattr(row, "match_loan_id"))] = int(label)
+    return overrides
 
 
 def collapse_duplicate_metadata(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -278,7 +310,13 @@ def main() -> None:
         pairs["match_edit_type_norm"].isin(RENEWAL_EDIT_TYPES)
         & pairs["match_base_from_loan_id"].fillna("").astype(str).eq(pairs["query_loan_id"].astype(str))
     )
+    pairs["pair_key"] = [pair_key(a, b) for a, b in zip(pairs["query_loan_id"], pairs["match_loan_id"])]
+    pair_label_overrides = load_pair_label_overrides(output_dir)
+    pairs["reviewed_pair_label"] = pairs["pair_key"].map(pair_label_overrides)
     pairs["stage1_label"] = (pairs["same_similar_group"].astype(bool) | pairs["renewal_base_pair"]).astype(int)
+    pairs.loc[pairs["reviewed_pair_label"].notna(), "stage1_label"] = pairs.loc[
+        pairs["reviewed_pair_label"].notna(), "reviewed_pair_label"
+    ].astype(int)
 
     X_train, X_test, y_train, y_test = train_test_split(
         pairs[IMAGE_FEATURE_COLUMNS],
@@ -374,6 +412,11 @@ def main() -> None:
         "stage1": {
             "purpose": "image-only similar_group detection",
             "image_features": IMAGE_FEATURE_COLUMNS,
+            "label_definition": "same_similar_group OR renewal_base_pair, overridden by outputs/mvp/stage1_review.csv pair labels when present",
+            "reviewed_pair_label_rows": int(pairs["reviewed_pair_label"].notna().sum()),
+            "reviewed_pair_label_positive_rows": int(pairs["reviewed_pair_label"].eq(1).sum()),
+            "reviewed_pair_label_negative_rows": int(pairs["reviewed_pair_label"].eq(0).sum()),
+            "reviewed_pair_label_unique_pairs": int(len(pair_label_overrides)),
             "pair_level_split": {
                 "rows_train": int(len(X_train)),
                 "rows_test": int(len(X_test)),

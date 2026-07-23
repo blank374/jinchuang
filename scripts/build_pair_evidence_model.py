@@ -27,6 +27,8 @@ from sklearn.preprocessing import StandardScaler
 
 ID_CARD_PATTERN = re.compile(r"(?<!\d)(\d{17}[0-9Xx])(?![0-9Xx])")
 RENEWAL_EDIT_TYPES = {"bg", "hair", "shirt", "shirt_bg", "background", "clothes", "background_change", "hair_change", "clothes_change"}
+POSITIVE_REVIEW_DECISIONS = {"确认相似", "CSV漏标，确认相似", "相似", "similar", "true", "1", "yes", "positive", "pair_label_positive"}
+NEGATIVE_REVIEW_DECISIONS = {"确认不相似", "误报/不采用", "不相似", "not_similar", "false", "0", "no"}
 
 
 @dataclass
@@ -92,6 +94,36 @@ def dataset_loan_id_from_path(frame: pd.DataFrame) -> pd.Series:
 
 def base_loan_id_from_path(series: pd.Series) -> pd.Series:
     return series.fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+
+
+def pair_key(left: object, right: object) -> str:
+    return "|".join(sorted((str(left), str(right))))
+
+
+def review_decision_to_label(value: object) -> int | None:
+    text = str(value or "").strip()
+    if text in POSITIVE_REVIEW_DECISIONS:
+        return 1
+    if text in NEGATIVE_REVIEW_DECISIONS:
+        return 0
+    return None
+
+
+def load_pair_label_overrides(output_dir: Path) -> dict[str, int]:
+    path = output_dir / "stage1_review.csv"
+    if not path.exists():
+        return {}
+    reviews = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
+    required = {"query_loan_id", "match_loan_id", "decision"}
+    if not required.issubset(reviews.columns):
+        return {}
+    overrides: dict[str, int] = {}
+    for row in reviews.itertuples(index=False):
+        label = review_decision_to_label(getattr(row, "decision", ""))
+        if label is None:
+            continue
+        overrides[pair_key(getattr(row, "query_loan_id"), getattr(row, "match_loan_id"))] = int(label)
+    return overrides
 
 
 def collapse_duplicate_metadata(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -479,7 +511,13 @@ def main() -> None:
         "id_match",
         "id_conflict",
     ]
+    pair_label_overrides = load_pair_label_overrides(output_dir)
+    features["pair_key"] = [pair_key(a, b) for a, b in zip(features["query_loan_id"], features["match_loan_id"])]
+    features["reviewed_pair_label"] = features["pair_key"].map(pair_label_overrides)
     y = (features["same_similar_group"].astype(bool) | features["renewal_base_pair"].astype(bool)).astype(int)
+    y.loc[features["reviewed_pair_label"].notna()] = features.loc[
+        features["reviewed_pair_label"].notna(), "reviewed_pair_label"
+    ].astype(int)
     X_train, X_test, y_train, y_test = train_test_split(
         features[feature_columns], y, test_size=0.25, random_state=42, stratify=y
     )
@@ -526,6 +564,11 @@ def main() -> None:
         "rows": int(len(features)),
         "positive_pairs": int(y.sum()),
         "renewal_base_pairs": int(features["renewal_base_pair"].sum()),
+        "label_definition": "same_similar_group OR renewal_base_pair, overridden by outputs/mvp/stage1_review.csv pair labels when present",
+        "reviewed_pair_label_rows": int(features["reviewed_pair_label"].notna().sum()),
+        "reviewed_pair_label_positive_rows": int(features["reviewed_pair_label"].eq(1).sum()),
+        "reviewed_pair_label_negative_rows": int(features["reviewed_pair_label"].eq(0).sum()),
+        "reviewed_pair_label_unique_pairs": int(len(pair_label_overrides)),
         "model": args.model,
         "probability_threshold": args.probability_threshold,
         "test_metrics": {

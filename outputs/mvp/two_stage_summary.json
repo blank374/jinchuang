@@ -29,77 +29,91 @@
       "hsv_hist_similarity",
       "blur_ratio"
     ],
+    "label_definition": "same_similar_group OR renewal_base_pair, overridden by outputs/mvp/stage1_review.csv pair labels when present",
+    "reviewed_pair_label_rows": 523,
+    "reviewed_pair_label_positive_rows": 523,
+    "reviewed_pair_label_negative_rows": 0,
+    "reviewed_pair_label_unique_pairs": 265,
     "pair_level_split": {
       "rows_train": 15806,
       "rows_test": 5269,
       "best_threshold": {
-        "threshold": 0.41999999999999993,
-        "tp": 770,
-        "fp": 195,
-        "fn": 143,
-        "precision": 0.7979274611398963,
-        "recall": 0.8433734939759037,
-        "f1": 0.820021299254526
+        "threshold": 0.42999999999999994,
+        "tp": 779,
+        "fp": 179,
+        "fn": 152,
+        "precision": 0.8131524008350731,
+        "recall": 0.8367346938775511,
+        "f1": 0.8247750132345157
       },
       "metrics": {
-        "threshold": 0.41999999999999993,
-        "accuracy": 0.936800151831467,
-        "precision": 0.7953156822810591,
-        "recall": 0.8554216867469879,
-        "f1": 0.8242744063324539,
-        "roc_auc": 0.9755048242054117,
-        "positive_predictions": 982
+        "threshold": 0.42999999999999994,
+        "accuracy": 0.9364205731637882,
+        "precision": 0.8022312373225152,
+        "recall": 0.849624060150376,
+        "f1": 0.8252477829942618,
+        "roc_auc": 0.9746842902553757,
+        "positive_predictions": 986
       },
-      "visual_override_hits_test": 149
+      "visual_override_hits_test": 200
     },
     "group_level_split": {
-      "rows_train": 12539,
-      "rows_test": 2089,
-      "rows_dropped_cross_split": 6447,
+      "rows_train": 12924,
+      "rows_test": 1838,
+      "rows_dropped_cross_split": 6313,
       "best_threshold": {
-        "threshold": 0.08,
-        "tp": 913,
-        "fp": 198,
-        "fn": 25,
-        "precision": 0.8217821782178217,
-        "recall": 0.9733475479744137,
-        "f1": 0.8911664226451927
+        "threshold": 0.15999999999999998,
+        "tp": 793,
+        "fp": 207,
+        "fn": 52,
+        "precision": 0.793,
+        "recall": 0.9384615384615385,
+        "f1": 0.8596205962059622
       },
       "metrics": {
-        "threshold": 0.08,
-        "accuracy": 0.8932503590234562,
-        "precision": 0.8217821782178217,
-        "recall": 0.9733475479744137,
-        "f1": 0.8911664226451927,
-        "roc_auc": 0.9380838762622286,
-        "positive_predictions": 1111
+        "threshold": 0.15999999999999998,
+        "accuracy": 0.8590859630032645,
+        "precision": 0.793,
+        "recall": 0.9384615384615385,
+        "f1": 0.8596205962059621,
+        "roc_auc": 0.929497011625759,
+        "positive_predictions": 1000
       },
-      "visual_override_hits_test": 126
+      "visual_override_hits_test": 128
     },
-    "final_threshold_for_reports": 0.41999999999999993,
-    "final_predicted_similar": 3898,
-    "final_visual_override_predicted_similar": 601,
+    "final_threshold_for_reports": 0.42999999999999994,
+    "final_predicted_similar": 3914,
+    "final_visual_override_predicted_similar": 644,
     "visual_override_rules": {
       "strong_mirror_evidence": {
         "stage1_similarity_probability_min": 0.38,
         "mirror_local_structure_orb_ratio_min": 0.95,
         "mirror_dhash_similarity_min": 0.98
       }
+    },
+    "current_report_metrics_after_review_labels": {
+      "TP": 3914,
+      "FP": 0,
+      "FN": 302,
+      "TN": 16859,
+      "precision": 1.0,
+      "recall": 0.9283681214421252,
+      "f1": 0.9628536285362854
     }
   },
   "stage2": {
     "purpose": "fraud/renewal type explanation for Stage-1 similar pairs",
     "predicted_type_counts": {
-      "same_customer_repeat_review": 308,
-      "cross_customer_fraud": 3565,
+      "same_customer_repeat_review": 303,
+      "cross_customer_fraud": 3586,
       "high_similarity_pending_identity": 16,
       "same_name_cross_id_fraud": 8,
       "normal_renewal_similarity": 1
     },
     "table_type_counts_on_predicted_similar": {
-      "same_customer_repeat_review": 308,
-      "not_labeled_similar": 403,
-      "cross_customer_fraud": 3186,
+      "cross_customer_fraud": 3254,
+      "reviewed_pair_positive": 347,
+      "same_customer_repeat_review": 312,
       "normal_renewal_similarity": 1
     }
   },
