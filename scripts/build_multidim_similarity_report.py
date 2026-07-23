@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 ID_CARD_PATTERN = re.compile(r"(?<!\d)(\d{17}[0-9Xx])(?![0-9Xx])")
+RENEWAL_EDIT_TYPES = {"bg", "hair", "shirt", "shirt_bg", "background", "clothes", "background_change", "hair_change", "clothes_change"}
 
 
 def normalize_name(value: object) -> str:
@@ -52,6 +53,26 @@ def dataset_loan_id_from_path(frame: pd.DataFrame) -> pd.Series:
     return frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
 
 
+def collapse_duplicate_metadata(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    rows = []
+    for _, group in frame[columns].groupby("dataset_loan_id", sort=False):
+        merged = {}
+        for column in columns:
+            values = [str(value) for value in group[column].fillna("").tolist() if str(value)]
+            if column == "similar_group":
+                merged[column] = next((value for value in values if value), "")
+            elif column == "is_similar_pair":
+                merged[column] = "1" if "1" in values else (values[0] if values else "")
+            else:
+                merged[column] = max(values, key=len) if values else ""
+        rows.append(merged)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def base_loan_id_from_path(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+
+
 def relation_type(row: pd.Series) -> str:
     if row["id_match"]:
         return "same_customer"
@@ -63,6 +84,8 @@ def relation_type(row: pd.Series) -> str:
 def predicted_fraud_type(row: pd.Series, face_threshold: float) -> str:
     if float(row["face_similarity"]) < face_threshold:
         return "not_suspicious"
+    if row["renewal_base_pair"]:
+        return "same_customer_renewal_or_repeat"
     if row["id_conflict"] and row["name_match"]:
         return "same_name_cross_id_fraud"
     if row["id_conflict"]:
@@ -75,6 +98,8 @@ def predicted_fraud_type(row: pd.Series, face_threshold: float) -> str:
 
 
 def table_fraud_type(row: pd.Series) -> str:
+    if row["renewal_base_pair"]:
+        return "same_customer_renewal_or_repeat"
     if not row["same_similar_group"]:
         return "not_labeled_similar"
     if row["id_match"] or row["same_iddd_pair"]:
@@ -109,12 +134,14 @@ def main() -> None:
     name_column = choose_name_column(annotations)
     id_column = choose_id_column(annotations)
     annotations = annotations.assign(dataset_loan_id=dataset_loan_id_from_path(annotations))
+    columns = ["dataset_loan_id", "loan_id", "similar_group", "is_similar_pair", "same_iddd", "edit_type", "base_from", name_column, id_column]
     meta = (
-        annotations[["dataset_loan_id", "loan_id", "similar_group", "is_similar_pair", "same_iddd", name_column, id_column]]
+        collapse_duplicate_metadata(annotations, columns)
         .rename(columns={"loan_id": "business_loan_id", name_column: "name", id_column: "id_card_number"})
-        .drop_duplicates("dataset_loan_id")
     )
     meta["name_norm"] = meta["name"].map(normalize_name)
+    meta["edit_type_norm"] = meta["edit_type"].fillna("").astype(str).str.lower()
+    meta["base_from_loan_id"] = base_loan_id_from_path(meta["base_from"])
     meta["has_id_text"] = meta["id_card_number"].astype(str).map(lambda value: bool(ID_CARD_PATTERN.search(value)))
     meta = meta.drop(columns=["id_card_number"])
     meta = meta.merge(identity[["dataset_loan_id", "customer_id_hash", "status"]], on="dataset_loan_id", how="left")
@@ -156,6 +183,13 @@ def main() -> None:
         & result["match_similar_group"].fillna("").ne("")
         & result["query_similar_group"].eq(result["match_similar_group"])
     )
+    result["renewal_base_pair"] = (
+        result["query_edit_type_norm"].isin(RENEWAL_EDIT_TYPES)
+        & result["query_base_from_loan_id"].fillna("").astype(str).eq(result["match_loan_id"].astype(str))
+    ) | (
+        result["match_edit_type_norm"].isin(RENEWAL_EDIT_TYPES)
+        & result["match_base_from_loan_id"].fillna("").astype(str).eq(result["query_loan_id"].astype(str))
+    )
     result["same_iddd_pair"] = result["query_same_iddd"].astype(str).eq("1") | result["match_same_iddd"].astype(str).eq("1")
     result["customer_relation"] = result.apply(relation_type, axis=1)
     result["predicted_fraud_type"] = result.apply(predicted_fraud_type, axis=1, face_threshold=args.face_threshold)
@@ -183,7 +217,12 @@ def main() -> None:
         "id_conflict",
         "customer_relation",
         "same_similar_group",
+        "renewal_base_pair",
         "same_iddd_pair",
+        "query_edit_type",
+        "match_edit_type",
+        "query_base_from",
+        "match_base_from",
         "predicted_fraud_type",
         "table_fraud_type",
         "query_path",
@@ -193,7 +232,7 @@ def main() -> None:
     result[keep_columns].to_csv(report_path, index=False, encoding="utf-8-sig")
 
     predicted_similar = result["face_similarity"] >= args.face_threshold
-    actual_similar = result["same_similar_group"]
+    actual_similar = result["same_similar_group"] | result["renewal_base_pair"]
     similar_metrics = precision_recall_f1(
         int((predicted_similar & actual_similar).sum()),
         int((predicted_similar & ~actual_similar).sum()),
@@ -214,6 +253,7 @@ def main() -> None:
         "rows": int(len(result)),
         "name_column": name_column,
         "id_column": id_column,
+        "renewal_base_pairs": int(result["renewal_base_pair"].sum()),
         "predicted_fraud_type_counts": dict(Counter(result["predicted_fraud_type"])),
         "table_fraud_type_counts": dict(Counter(result["table_fraud_type"])),
         "customer_relation_counts": dict(Counter(result["customer_relation"])),

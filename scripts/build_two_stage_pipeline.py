@@ -32,6 +32,7 @@ IMAGE_FEATURE_COLUMNS = [
     "background_hist_similarity",
     "local_structure_orb_ratio",
     "dhash_similarity",
+    "mirror_local_structure_orb_ratio",
     "mirror_subject_region_hist_similarity",
     "mirror_background_hist_similarity",
     "mirror_dhash_similarity",
@@ -39,15 +40,27 @@ IMAGE_FEATURE_COLUMNS = [
     "edge_dhash_similarity",
     "edge_hist_similarity",
     "rotated_dhash_similarity",
+    "rotated_dhash_gain",
     "rotated_edge_dhash_similarity",
+    "rotated_edge_dhash_gain",
     "brightness_delta",
     "contrast_delta",
+    "rgb_mean_abs_delta",
+    "rgb_mean_euclidean_delta",
+    "lab_mean_abs_delta",
+    "lab_delta_e",
+    "lab_delta_e2000",
+    "hsv_mean_abs_delta",
+    "hsv_hist_similarity",
     "blur_ratio",
 ]
 
 
 RENEWAL_EDIT_TYPES = {"bg", "hair", "shirt", "shirt_bg", "background", "clothes", "background_change", "hair_change", "clothes_change"}
 MANIPULATION_EDIT_TYPES = {"brightness", "contrast", "rotate", "rotation", "crop", "mirror", "flip"}
+MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD = 0.95
+MIRROR_DHASH_OVERRIDE_THRESHOLD = 0.98
+MIRROR_PROBABILITY_FLOOR = 0.38
 
 
 def normalize_name(value: object) -> str:
@@ -56,6 +69,22 @@ def normalize_name(value: object) -> str:
 
 def dataset_loan_id_from_path(frame: pd.DataFrame) -> pd.Series:
     return frame["file_path"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+
+
+def collapse_duplicate_metadata(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    rows = []
+    for _, group in frame[columns].groupby("dataset_loan_id", sort=False):
+        merged = {}
+        for column in columns:
+            values = [str(value) for value in group[column].fillna("").tolist() if str(value)]
+            if column == "similar_group":
+                merged[column] = next((value for value in values if value), "")
+            elif column == "is_similar_pair":
+                merged[column] = "1" if "1" in values else (values[0] if values else "")
+            else:
+                merged[column] = max(values, key=len) if values else ""
+        rows.append(merged)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def choose_name_column(frame: pd.DataFrame) -> str:
@@ -73,11 +102,7 @@ def load_metadata(annotations_path: Path, output_dir: Path) -> pd.DataFrame:
     name_column = choose_name_column(annotations)
     annotations = annotations.assign(dataset_loan_id=dataset_loan_id_from_path(annotations))
     columns = ["dataset_loan_id", "file_path", "loan_id", "similar_group", "is_similar_pair", "edit_type", "base_from", "same_iddd", name_column]
-    metadata = (
-        annotations[columns]
-        .rename(columns={"loan_id": "business_loan_id", name_column: "name"})
-        .drop_duplicates("dataset_loan_id")
-    )
+    metadata = collapse_duplicate_metadata(annotations, columns).rename(columns={"loan_id": "business_loan_id", name_column: "name"})
     metadata["name_norm"] = metadata["name"].map(normalize_name)
     metadata["loan_group_key"] = metadata["similar_group"].where(metadata["similar_group"].astype(str).ne(""), metadata["dataset_loan_id"])
     metadata["base_from_loan_id"] = (
@@ -145,6 +170,17 @@ def best_threshold(y_true: pd.Series | np.ndarray, probabilities: np.ndarray) ->
 def metrics_at_threshold(y_true: pd.Series | np.ndarray, probabilities: np.ndarray, threshold: float) -> dict[str, float | int]:
     y = np.asarray(y_true).astype(int)
     prediction = (probabilities >= threshold).astype(int)
+    return metrics_for_prediction(y, prediction, probabilities, threshold)
+
+
+def metrics_for_prediction(
+    y_true: pd.Series | np.ndarray,
+    prediction: pd.Series | np.ndarray,
+    probabilities: np.ndarray,
+    threshold: float,
+) -> dict[str, float | int]:
+    y = np.asarray(y_true).astype(int)
+    prediction = np.asarray(prediction).astype(int)
     precision, recall, f1, _ = precision_recall_fscore_support(y, prediction, average="binary", zero_division=0)
     return {
         "threshold": float(threshold),
@@ -155,6 +191,24 @@ def metrics_at_threshold(y_true: pd.Series | np.ndarray, probabilities: np.ndarr
         "roc_auc": float(roc_auc_score(y, probabilities)) if len(set(y)) > 1 else 0.0,
         "positive_predictions": int(prediction.sum()),
     }
+
+
+def visual_override_mask(frame: pd.DataFrame, probabilities: pd.Series | np.ndarray | None = None) -> pd.Series:
+    mirror_orb = frame.get("mirror_local_structure_orb_ratio", pd.Series(0.0, index=frame.index)).astype(float)
+    mirror_hash = frame.get("mirror_dhash_similarity", pd.Series(0.0, index=frame.index)).astype(float)
+    if probabilities is None:
+        probability = frame.get("stage1_similarity_probability", pd.Series(0.0, index=frame.index)).astype(float)
+    else:
+        probability = pd.Series(probabilities, index=frame.index).astype(float)
+    return (
+        (probability >= MIRROR_PROBABILITY_FLOOR)
+        & (mirror_orb >= MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD)
+        & (mirror_hash >= MIRROR_DHASH_OVERRIDE_THRESHOLD)
+    )
+
+
+def visual_override_reason(frame: pd.DataFrame) -> pd.Series:
+    return pd.Series(np.where(visual_override_mask(frame), "strong_mirror_evidence", ""), index=frame.index)
 
 
 def make_group_split(frame: pd.DataFrame, test_size: float, random_state: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -207,7 +261,9 @@ def main() -> None:
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
-    pairs = pd.read_csv(args.pair_report)
+    pairs = pd.read_csv(args.pair_report, low_memory=False)
+    metadata_columns = ["query_edit_type", "match_edit_type", "query_base_from", "match_base_from"]
+    pairs = pairs.drop(columns=[column for column in metadata_columns if column in pairs.columns])
     metadata = load_metadata(Path(args.annotations), output_dir)
     left = metadata.add_prefix("query_")
     right = metadata.add_prefix("match_")
@@ -235,20 +291,38 @@ def main() -> None:
     pair_model.fit(X_train, y_train)
     pair_test_probabilities = pair_model.predict_proba(X_test)[:, 1]
     pair_best = best_threshold(y_test, pair_test_probabilities)
-    pair_metrics = metrics_at_threshold(y_test, pair_test_probabilities, float(pair_best["threshold"]))
+    pair_threshold = float(pair_best["threshold"])
+    pair_base_prediction = pair_test_probabilities >= pair_threshold
+    pair_override = visual_override_mask(X_test, pair_test_probabilities).to_numpy()
+    pair_metrics = metrics_for_prediction(y_test, pair_base_prediction | pair_override, pair_test_probabilities, pair_threshold)
 
     group_train, group_test, group_dropped = make_group_split(pairs, args.test_size, args.random_state)
     group_model = build_model()
     group_model.fit(group_train[IMAGE_FEATURE_COLUMNS], group_train["stage1_label"])
     group_test_probabilities = group_model.predict_proba(group_test[IMAGE_FEATURE_COLUMNS])[:, 1]
     group_best = best_threshold(group_test["stage1_label"], group_test_probabilities)
-    group_metrics = metrics_at_threshold(group_test["stage1_label"], group_test_probabilities, float(group_best["threshold"]))
+    group_threshold = float(group_best["threshold"])
+    group_base_prediction = group_test_probabilities >= group_threshold
+    group_override = visual_override_mask(group_test, group_test_probabilities).to_numpy()
+    group_metrics = metrics_for_prediction(group_test["stage1_label"], group_base_prediction | group_override, group_test_probabilities, group_threshold)
 
     final_model = build_model()
     final_model.fit(pairs[IMAGE_FEATURE_COLUMNS], pairs["stage1_label"])
     pairs["stage1_similarity_probability"] = final_model.predict_proba(pairs[IMAGE_FEATURE_COLUMNS])[:, 1]
-    final_threshold = float(pair_best["threshold"])
-    pairs["stage1_predicted_similar"] = pairs["stage1_similarity_probability"] >= final_threshold
+    final_threshold = pair_threshold
+    pairs["probability_predicted_similar"] = pairs["stage1_similarity_probability"] >= final_threshold
+    pairs["visual_override_reason"] = visual_override_reason(pairs)
+    pairs["visual_override_predicted_similar"] = pairs["visual_override_reason"].astype(bool)
+    pairs["stage1_predicted_similar"] = pairs["probability_predicted_similar"] | pairs["visual_override_predicted_similar"]
+    pairs["stage1_decision_source"] = np.select(
+        [
+            pairs["probability_predicted_similar"] & pairs["visual_override_predicted_similar"],
+            pairs["probability_predicted_similar"],
+            pairs["visual_override_predicted_similar"],
+        ],
+        ["probability_and_visual_override", "probability", "visual_override"],
+        default="not_predicted",
+    )
     pairs["stage2_predicted_type"] = pairs.apply(explain_stage2, axis=1)
     pairs["stage2_table_type"] = pairs.apply(table_stage2_type, axis=1)
 
@@ -258,6 +332,10 @@ def main() -> None:
         "rank",
         *IMAGE_FEATURE_COLUMNS,
         "stage1_similarity_probability",
+        "probability_predicted_similar",
+        "visual_override_predicted_similar",
+        "visual_override_reason",
+        "stage1_decision_source",
         "stage1_predicted_similar",
         "stage1_label",
         "same_similar_group",
@@ -301,6 +379,7 @@ def main() -> None:
                 "rows_test": int(len(X_test)),
                 "best_threshold": pair_best,
                 "metrics": pair_metrics,
+                "visual_override_hits_test": int(pair_override.sum()),
             },
             "group_level_split": {
                 "rows_train": int(len(group_train)),
@@ -308,9 +387,18 @@ def main() -> None:
                 "rows_dropped_cross_split": int(len(group_dropped)),
                 "best_threshold": group_best,
                 "metrics": group_metrics,
+                "visual_override_hits_test": int(group_override.sum()),
             },
             "final_threshold_for_reports": final_threshold,
             "final_predicted_similar": int(pairs["stage1_predicted_similar"].sum()),
+            "final_visual_override_predicted_similar": int(pairs["visual_override_predicted_similar"].sum()),
+            "visual_override_rules": {
+                "strong_mirror_evidence": {
+                    "stage1_similarity_probability_min": MIRROR_PROBABILITY_FLOOR,
+                    "mirror_local_structure_orb_ratio_min": MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD,
+                    "mirror_dhash_similarity_min": MIRROR_DHASH_OVERRIDE_THRESHOLD,
+                }
+            },
         },
         "stage2": {
             "purpose": "fraud/renewal type explanation for Stage-1 similar pairs",

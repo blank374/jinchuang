@@ -2,6 +2,7 @@
 
 import json
 import sys
+from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
 
@@ -79,6 +80,7 @@ FIELD_LABELS = {
     "background_hist_similarity": "背景相似度",
     "local_structure_orb_ratio": "局部结构匹配",
     "dhash_similarity": "感知哈希相似度",
+    "mirror_local_structure_orb_ratio": "镜像局部结构匹配",
     "mirror_subject_region_hist_similarity": "镜像主体相似度",
     "mirror_background_hist_similarity": "镜像背景相似度",
     "mirror_dhash_similarity": "镜像感知哈希相似度",
@@ -86,11 +88,19 @@ FIELD_LABELS = {
     "edge_dhash_similarity": "边缘哈希相似度",
     "edge_hist_similarity": "边缘结构相似度",
     "rotated_dhash_similarity": "旋转感知哈希相似度",
+    "rotated_dhash_gain": "旋转哈希增益",
     "rotated_edge_dhash_similarity": "旋转边缘哈希相似度",
+    "rotated_edge_dhash_gain": "旋转边缘增益",
     "brightness_delta": "亮度差",
     "contrast_delta": "对比度差",
+    "lab_delta_e2000": "CIEDE2000色差",
+    "hsv_hist_similarity": "HSV色彩分布相似度",
     "blur_ratio": "清晰度比例",
     "stage1_similarity_probability": "阶段一相似概率",
+    "probability_predicted_similar": "概率是否命中",
+    "visual_override_predicted_similar": "视觉兜底是否命中",
+    "visual_override_reason": "视觉兜底原因",
+    "stage1_decision_source": "阶段一判定来源",
     "stage1_predicted_similar": "阶段一预测相似",
     "stage1_label": "CSV相似标签",
     "same_similar_group": "同similar_group",
@@ -128,6 +138,7 @@ EVIDENCE_LABELS = {
     "background_hist_similarity": "背景环境接近",
     "local_structure_orb_ratio": "局部结构/同源痕迹",
     "dhash_similarity": "感知哈希/翻拍裁剪痕迹",
+    "mirror_local_structure_orb_ratio": "镜像后局部结构强匹配",
     "mirror_subject_region_hist_similarity": "镜像后人物主体接近",
     "mirror_background_hist_similarity": "镜像后背景环境接近",
     "mirror_dhash_similarity": "镜像后感知哈希接近",
@@ -135,7 +146,11 @@ EVIDENCE_LABELS = {
     "edge_dhash_similarity": "边缘哈希结构接近",
     "edge_hist_similarity": "边缘分布结构接近",
     "rotated_dhash_similarity": "小角度旋转后仍接近",
+    "rotated_dhash_gain": "旋转补偿后哈希提升",
     "rotated_edge_dhash_similarity": "旋转后边缘结构接近",
+    "rotated_edge_dhash_gain": "旋转补偿后边缘提升",
+    "lab_delta_e2000": "感知色差较小",
+    "hsv_hist_similarity": "色彩分布接近",
     "brightness_delta": "亮度差异",
     "contrast_delta": "对比度差异",
     "blur_ratio": "清晰度一致性",
@@ -408,6 +423,260 @@ def save_stage1_review(query_loan_id: str, match_loan_id: str, decision: str, no
     st.cache_data.clear()
 
 
+def read_optional_csv(path: Path, columns: list[str]) -> pd.DataFrame:
+    if path.exists():
+        return pd.read_csv(path, dtype=str).fillna("")
+    return pd.DataFrame(columns=columns)
+
+
+def review_decision_to_label(value: object) -> int | None:
+    text = str(value or "").strip()
+    if text in {"确认相似", "相似", "similar", "true", "1", "yes"}:
+        return 1
+    if text in {"确认不相似", "误报/不采用", "不相似", "not_similar", "false", "0", "no"}:
+        return 0
+    return None
+
+
+def load_manual_review_pairs() -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    stage1_reviews = read_optional_csv(
+        OUTPUT / "stage1_review.csv",
+        ["query_loan_id", "match_loan_id", "decision", "note"],
+    )
+    for item in stage1_reviews.itertuples(index=False):
+        label = review_decision_to_label(getattr(item, "decision", ""))
+        if label is None:
+            continue
+        rows.append(
+            {
+                "query_loan_id": str(item.query_loan_id),
+                "match_loan_id": str(item.match_loan_id),
+                "is_similar": label,
+                "decision": str(item.decision),
+                "note": str(getattr(item, "note", "")),
+                "source": "stage1_review",
+            }
+        )
+
+    review_labels = read_optional_csv(
+        OUTPUT / "review_labels.csv",
+        ["query_loan_id", "match_loan_id", "is_similar", "note"],
+    )
+    for item in review_labels.itertuples(index=False):
+        label = review_decision_to_label(getattr(item, "is_similar", ""))
+        if label is None:
+            continue
+        rows.append(
+            {
+                "query_loan_id": str(item.query_loan_id),
+                "match_loan_id": str(item.match_loan_id),
+                "is_similar": label,
+                "decision": "确认相似" if label else "确认不相似",
+                "note": str(getattr(item, "note", "")),
+                "source": "review_labels",
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame(columns=["query_loan_id", "match_loan_id", "is_similar", "decision", "note", "source", "pair_key"])
+    frame = pd.DataFrame(rows)
+    frame["pair_key"] = [pair_key(a, b) for a, b in zip(frame["query_loan_id"], frame["match_loan_id"])]
+    return frame.drop_duplicates("pair_key", keep="last").reset_index(drop=True)
+
+
+RENEWAL_EDIT_TYPES = {"bg", "hair", "shirt", "shirt_bg", "background", "clothes", "background_change", "hair_change", "clothes_change"}
+
+
+def collapse_duplicate_annotation_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for _, group in frame.groupby("file_path", sort=False):
+        merged = {}
+        for column in frame.columns:
+            values = [str(value) for value in group[column].fillna("").tolist() if str(value)]
+            if column == "similar_group":
+                merged[column] = next((value for value in values if value), "")
+            elif column == "is_similar_pair":
+                merged[column] = "1" if "1" in values else (values[0] if values else "")
+            else:
+                merged[column] = max(values, key=len) if values else ""
+        rows.append(merged)
+    return pd.DataFrame(rows, columns=frame.columns)
+
+
+def reviewed_annotations_outputs(annotation_path: str, manual_pairs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    if not annotation_path:
+        return pd.DataFrame(), pd.DataFrame(), {"error": "未找到 annotations.csv"}
+    source_path = Path(annotation_path)
+    if not source_path.exists():
+        return pd.DataFrame(), pd.DataFrame(), {"error": f"标注文件不存在：{source_path}"}
+
+    annotations_raw = pd.read_csv(source_path, dtype=str).fillna("")
+    if "file_path" not in annotations_raw.columns:
+        return annotations_raw, pd.DataFrame(), {"error": "annotations.csv 缺少 file_path 字段"}
+
+    corrected = annotations_raw.copy()
+    normalized_paths = corrected["file_path"].astype(str).str.replace("\\", "/", regex=False)
+    corrected["dataset_loan_id"] = normalized_paths.str.split("/").str[0]
+    if "image_type" not in corrected.columns:
+        corrected["image_type"] = normalized_paths.str.rsplit("/", n=1).str[-1].str.rsplit(".", n=1).str[0]
+    corrected = collapse_duplicate_annotation_rows(corrected)
+    normalized_paths = corrected["file_path"].astype(str).str.replace("\\", "/", regex=False)
+    corrected["dataset_loan_id"] = normalized_paths.str.split("/").str[0]
+    corrected["image_type"] = normalized_paths.str.rsplit("/", n=1).str[-1].str.rsplit(".", n=1).str[0]
+
+    face_mask = corrected["image_type"].eq("face_signing")
+    face_loans = sorted(corrected.loc[face_mask, "dataset_loan_id"].dropna().astype(str).unique().tolist())
+    loan_set = set(face_loans)
+
+    original_edges: set[tuple[str, str]] = set()
+    original_groups = corrected.loc[
+        face_mask & corrected["similar_group"].astype(str).ne(""),
+        ["dataset_loan_id", "similar_group"],
+    ]
+    for _, group in original_groups.groupby("similar_group"):
+        loans = sorted(group["dataset_loan_id"].astype(str).unique().tolist())
+        for left, right in combinations(loans, 2):
+            original_edges.add(tuple(sorted((left, right))))
+
+    manual_positive: set[tuple[str, str]] = set()
+    manual_negative: set[tuple[str, str]] = set()
+    renewal_edges: set[tuple[str, str]] = set()
+    if {"edit_type", "base_from"}.issubset(corrected.columns):
+        renewal = corrected.loc[face_mask].copy()
+        renewal["edit_type_norm"] = renewal["edit_type"].fillna("").astype(str).str.lower()
+        renewal["base_from_loan_id"] = renewal["base_from"].fillna("").astype(str).str.replace("\\", "/", regex=False).str.split("/").str[0]
+        renewal = renewal[
+            renewal["edit_type_norm"].isin(RENEWAL_EDIT_TYPES)
+            & renewal["base_from_loan_id"].isin(loan_set)
+            & renewal["dataset_loan_id"].ne(renewal["base_from_loan_id"])
+        ]
+        renewal_edges = {tuple(sorted((str(row.dataset_loan_id), str(row.base_from_loan_id)))) for row in renewal.itertuples(index=False)}
+    override_rows = []
+    for item in manual_pairs.itertuples(index=False):
+        left = str(item.query_loan_id)
+        right = str(item.match_loan_id)
+        key = tuple(sorted((left, right)))
+        if left not in loan_set or right not in loan_set:
+            override_rows.append(
+                {
+                    "query_loan_id": left,
+                    "match_loan_id": right,
+                    "manual_is_similar": int(item.is_similar),
+                    "source": item.source,
+                    "note": item.note,
+                    "status": "loan_not_found_in_annotations",
+                }
+            )
+            continue
+        if int(item.is_similar):
+            manual_positive.add(key)
+            status = "manual_positive"
+        else:
+            manual_negative.add(key)
+            status = "manual_negative"
+        override_rows.append(
+            {
+                "query_loan_id": left,
+                "match_loan_id": right,
+                "manual_is_similar": int(item.is_similar),
+                "source": item.source,
+                "note": item.note,
+                "status": status,
+            }
+        )
+
+    edges = (original_edges | renewal_edges | manual_positive) - manual_negative
+    graph: dict[str, set[str]] = defaultdict(set)
+    for left, right in edges:
+        graph[left].add(right)
+        graph[right].add(left)
+
+    group_by_loan: dict[str, str] = {}
+    visited: set[str] = set()
+    group_number = 1
+    manual_positive_split = 0
+    for loan in face_loans:
+        if loan in visited:
+            continue
+        stack = [loan]
+        component: list[str] = []
+        visited.add(loan)
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbor in graph[current]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        constrained_components: list[list[str]] = []
+        for component_loan in sorted(component, key=lambda value: (-len(graph[value]), value)):
+            for candidate in constrained_components:
+                if all(tuple(sorted((component_loan, existing))) not in manual_negative for existing in candidate):
+                    candidate.append(component_loan)
+                    break
+            else:
+                constrained_components.append([component_loan])
+
+        for constrained_component in constrained_components:
+            if len(constrained_component) < 2:
+                continue
+            group_id = f"MRG_{group_number:04d}"
+            group_number += 1
+            for component_loan in constrained_component:
+                group_by_loan[component_loan] = group_id
+
+    for left, right in manual_positive:
+        if group_by_loan.get(left) != group_by_loan.get(right):
+            manual_positive_split += 1
+
+    corrected.loc[face_mask, "similar_group"] = corrected.loc[face_mask, "dataset_loan_id"].map(group_by_loan).fillna("")
+    corrected.loc[face_mask, "is_similar_pair"] = corrected.loc[face_mask, "similar_group"].astype(str).ne("").astype(int).astype(str)
+    corrected = corrected.drop(columns=["dataset_loan_id"], errors="ignore")
+
+    overrides = pd.DataFrame(override_rows)
+    conflicts = 0
+    if not overrides.empty:
+        positive_keys = {pair_key(a, b) for a, b in manual_positive}
+        negative_keys = {pair_key(a, b) for a, b in manual_negative}
+        conflicts = len(positive_keys & negative_keys)
+
+    stats = {
+        "source_annotations": str(source_path),
+        "manual_pairs": int(len(manual_pairs)),
+        "manual_positive": int(len(manual_positive)),
+        "manual_negative": int(len(manual_negative)),
+        "renewal_base_edges": int(len(renewal_edges)),
+        "original_positive_edges": int(len(original_edges)),
+        "corrected_groups": int(group_number - 1),
+        "corrected_positive_loans": int(corrected.loc[face_mask, "similar_group"].astype(str).ne("").sum()),
+        "conflicting_manual_pairs": int(conflicts),
+        "manual_positive_pairs_split_by_negative_constraints": int(manual_positive_split),
+    }
+    return corrected, overrides, stats
+
+
+def save_reviewed_annotations(annotation_path: str, manual_pairs: pd.DataFrame) -> dict:
+    corrected, overrides, stats = reviewed_annotations_outputs(annotation_path, manual_pairs)
+    if stats.get("error"):
+        return stats
+    corrected_path = OUTPUT / "annotations_review_corrected.csv"
+    overrides_path = OUTPUT / "annotation_review_overrides.csv"
+    summary_path = OUTPUT / "annotation_review_summary.json"
+    corrected.to_csv(corrected_path, index=False, encoding="utf-8-sig")
+    overrides.to_csv(overrides_path, index=False, encoding="utf-8-sig")
+    summary_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    stats.update(
+        {
+            "corrected_path": str(corrected_path),
+            "overrides_path": str(overrides_path),
+            "summary_path": str(summary_path),
+        }
+    )
+    st.cache_data.clear()
+    return stats
+
+
 def bool_series(series: pd.Series) -> pd.Series:
     return series.astype(str).str.lower().isin({"true", "1", "yes"})
 
@@ -446,6 +715,7 @@ stage1 = data["stage1"]
 stage2 = data["stage2"]
 business = loan_business_frame(annotations)
 unique_topk = unique_pairs(topk)
+manual_review_pairs = load_manual_review_pairs()
 
 st.title("金融影像智能相似度风险检测")
 
@@ -624,6 +894,28 @@ with tab_similarity_review:
         c4.metric("Pair F1", f'{float(pair_metrics.get("f1", 0)):.1%}')
         c5.metric("相似候选", int(two_stage_summary.get("stage1", {}).get("final_predicted_similar", 0)))
 
+        st.markdown("**人工复核闭环**")
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("已复核 pair", int(len(manual_review_pairs)))
+        r2.metric("确认相似", int(manual_review_pairs["is_similar"].astype(str).eq("1").sum()) if not manual_review_pairs.empty else 0)
+        r3.metric("确认不相似", int(manual_review_pairs["is_similar"].astype(str).eq("0").sum()) if not manual_review_pairs.empty else 0)
+        r4.metric("原始标注文件", "已找到" if data["annotations_path"] else "未找到")
+        if manual_review_pairs.empty:
+            st.info("还没有可导出的人工复核结论。先在下方详情里保存“确认相似/确认不相似”。")
+        else:
+            st.dataframe(
+                with_chinese_columns(manual_review_pairs[["query_loan_id", "match_loan_id", "is_similar", "decision", "source", "note"]]),
+                width="stretch",
+                hide_index=True,
+            )
+            if st.button("导出复核修正版 annotations", type="primary"):
+                export_stats = save_reviewed_annotations(data["annotations_path"], manual_review_pairs)
+                if export_stats.get("error"):
+                    st.error(export_stats["error"])
+                else:
+                    st.success("已导出复核修正版标注文件。")
+                    st.json(export_stats)
+
         counts = stage1_view["error_type_label"].value_counts().reindex([ERROR_TYPE_LABELS[key] for key in ["TP", "FP", "FN", "TN"]]).fillna(0).astype(int)
         st.markdown("**预测与 CSV similar_group 对比**")
         st.bar_chart(counts)
@@ -656,6 +948,8 @@ with tab_similarity_review:
             "query_loan_id",
             "match_loan_id",
             "stage1_similarity_probability",
+            "stage1_decision_source",
+            "visual_override_reason",
             "stage1_predicted_similar",
             "stage1_label",
             "stage2_predicted_type_label",
@@ -665,6 +959,7 @@ with tab_similarity_review:
             "background_hist_similarity",
             "local_structure_orb_ratio",
             "dhash_similarity",
+            "mirror_local_structure_orb_ratio",
             "mirror_subject_region_hist_similarity",
             "mirror_background_hist_similarity",
             "mirror_dhash_similarity",
@@ -672,7 +967,11 @@ with tab_similarity_review:
             "edge_dhash_similarity",
             "edge_hist_similarity",
             "rotated_dhash_similarity",
+            "rotated_dhash_gain",
             "rotated_edge_dhash_similarity",
+            "rotated_edge_dhash_gain",
+            "lab_delta_e2000",
+            "hsv_hist_similarity",
             "brightness_delta",
             "contrast_delta",
             "blur_ratio",
@@ -705,6 +1004,7 @@ with tab_similarity_review:
                 "background_hist_similarity",
                 "local_structure_orb_ratio",
                 "dhash_similarity",
+                "mirror_local_structure_orb_ratio",
                 "mirror_subject_region_hist_similarity",
                 "mirror_background_hist_similarity",
                 "mirror_dhash_similarity",
@@ -712,7 +1012,11 @@ with tab_similarity_review:
                 "edge_dhash_similarity",
                 "edge_hist_similarity",
                 "rotated_dhash_similarity",
+                "rotated_dhash_gain",
                 "rotated_edge_dhash_similarity",
+                "rotated_edge_dhash_gain",
+                "lab_delta_e2000",
+                "hsv_hist_similarity",
                 "brightness_delta",
                 "contrast_delta",
                 "blur_ratio",

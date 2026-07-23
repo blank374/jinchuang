@@ -1,0 +1,12 @@
+{
+  "source_annotations": "data\\annotations.csv",
+  "manual_pairs": 59,
+  "manual_positive": 48,
+  "manual_negative": 11,
+  "renewal_base_edges": 349,
+  "original_positive_edges": 2785,
+  "corrected_groups": 827,
+  "corrected_positive_loans": 2883,
+  "conflicting_manual_pairs": 0,
+  "manual_positive_pairs_split_by_negative_constraints": 0
+}
