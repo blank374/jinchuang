@@ -1,6 +1,20 @@
 {
   "stage1": {
     "purpose": "image-only similar_group detection",
+    "operating_policy": {
+      "name": "recall_first",
+      "risk_preference": "recall_first_false_positives_accepted_for_manual_review",
+      "target_recall": 0.95,
+      "min_precision": 0.55
+    },
+    "pair_symmetry_handling": {
+      "policy": "undirected_pair_canonicalization",
+      "selection": "keep_highest_label_then_reviewed_then_global_similarity_then_best_rank",
+      "rows_before_collapse": 21075,
+      "self_pair_rows_removed": 0,
+      "symmetric_direction_rows_removed": 6306,
+      "unique_undirected_pairs": 14769
+    },
     "image_features": [
       "global_semantic_similarity",
       "subject_region_hist_similarity",
@@ -30,90 +44,144 @@
       "blur_ratio"
     ],
     "label_definition": "same_similar_group OR renewal_base_pair, overridden by outputs/mvp/stage1_review.csv pair labels when present",
-    "reviewed_pair_label_rows": 523,
-    "reviewed_pair_label_positive_rows": 523,
+    "reviewed_pair_label_rows": 2061,
+    "reviewed_pair_label_positive_rows": 2061,
     "reviewed_pair_label_negative_rows": 0,
-    "reviewed_pair_label_unique_pairs": 265,
+    "reviewed_pair_label_unique_pairs": 2061,
     "pair_level_split": {
-      "rows_train": 15806,
-      "rows_test": 5269,
+      "rows_train": 11076,
+      "rows_test": 3693,
       "best_threshold": {
-        "threshold": 0.42999999999999994,
-        "tp": 779,
-        "fp": 179,
-        "fn": 152,
-        "precision": 0.8131524008350731,
-        "recall": 0.8367346938775511,
-        "f1": 0.8247750132345157
+        "threshold": 0.5,
+        "tp": 935,
+        "fp": 20,
+        "fn": 48,
+        "precision": 0.9790575916230366,
+        "recall": 0.9511698880976602,
+        "f1": 0.9649122807017543,
+        "f2": 0.9566196030284428,
+        "selection_policy": "recall_first",
+        "target_recall": 0.95,
+        "min_precision": 0.55,
+        "selection_reason": "met_target_recall_and_min_precision"
       },
       "metrics": {
-        "threshold": 0.42999999999999994,
-        "accuracy": 0.9364205731637882,
-        "precision": 0.8022312373225152,
-        "recall": 0.849624060150376,
-        "f1": 0.8252477829942618,
-        "roc_auc": 0.9746842902553757,
-        "positive_predictions": 986
+        "threshold": 0.5,
+        "accuracy": 0.9818575683725969,
+        "precision": 0.9760914760914761,
+        "recall": 0.9552390640895219,
+        "f1": 0.9655526992287917,
+        "roc_auc": 0.9973443371259756,
+        "positive_predictions": 962
       },
-      "visual_override_hits_test": 200
+      "visual_override_hits_test": 835
     },
     "group_level_split": {
-      "rows_train": 12924,
-      "rows_test": 1838,
-      "rows_dropped_cross_split": 6313,
+      "rows_train": 8905,
+      "rows_test": 1160,
+      "rows_dropped_cross_split": 4704,
       "best_threshold": {
-        "threshold": 0.15999999999999998,
-        "tp": 793,
-        "fp": 207,
-        "fn": 52,
-        "precision": 0.793,
-        "recall": 0.9384615384615385,
-        "f1": 0.8596205962059622
+        "threshold": 0.5,
+        "tp": 523,
+        "fp": 2,
+        "fn": 21,
+        "precision": 0.9961904761904762,
+        "recall": 0.9613970588235294,
+        "f1": 0.9784845650140317,
+        "f2": 0.9681599407626805,
+        "selection_policy": "recall_first",
+        "target_recall": 0.95,
+        "min_precision": 0.55,
+        "selection_reason": "met_target_recall_and_min_precision"
       },
       "metrics": {
-        "threshold": 0.15999999999999998,
-        "accuracy": 0.8590859630032645,
-        "precision": 0.793,
-        "recall": 0.9384615384615385,
-        "f1": 0.8596205962059621,
-        "roc_auc": 0.929497011625759,
-        "positive_predictions": 1000
+        "threshold": 0.5,
+        "accuracy": 0.9801724137931035,
+        "precision": 0.9924385633270322,
+        "recall": 0.9650735294117647,
+        "f1": 0.97856477166822,
+        "roc_auc": 0.9986660857524827,
+        "positive_predictions": 529
       },
-      "visual_override_hits_test": 128
+      "visual_override_hits_test": 452
     },
-    "final_threshold_for_reports": 0.42999999999999994,
-    "final_predicted_similar": 3914,
-    "final_visual_override_predicted_similar": 644,
+    "final_threshold_for_reports": 0.5,
+    "final_predicted_similar": 3923,
+    "final_visual_override_predicted_similar": 3372,
+    "final_report_metrics_after_review_labels": {
+      "TP": 3918,
+      "FP": 5,
+      "FN": 14,
+      "TN": 10832,
+      "threshold": 0.5,
+      "accuracy": 0.9987135215654411,
+      "precision": 0.9987254652052001,
+      "recall": 0.996439471007121,
+      "f1": 0.9975811584977721,
+      "roc_auc": 0.9999551290457667,
+      "positive_predictions": 3923
+    },
+    "final_visual_override_reason_counts": {
+      "semantic_visual_evidence": 2418,
+      "low_color_delta_high_semantic": 1618,
+      "strong_mirror_evidence": 669,
+      "soft_mirror_evidence": 1510,
+      "contrast_or_brightness_shift": 234
+    },
     "visual_override_rules": {
       "strong_mirror_evidence": {
         "stage1_similarity_probability_min": 0.38,
         "mirror_local_structure_orb_ratio_min": 0.95,
         "mirror_dhash_similarity_min": 0.98
+      },
+      "soft_mirror_evidence": {
+        "global_semantic_similarity_min": 0.982,
+        "mirror_local_structure_orb_ratio_min": 0.65,
+        "mirror_dhash_similarity_min": 0.84
+      },
+      "semantic_visual_evidence": {
+        "stage1_similarity_probability_min": 0.12,
+        "global_semantic_similarity_min": 0.985,
+        "any_of": {
+          "dhash_similarity_min": 0.76,
+          "equalized_dhash_similarity_min": 0.78,
+          "edge_dhash_similarity_min": 0.7,
+          "low_color_delta": {
+            "lab_delta_e2000_max": 2.0,
+            "hsv_hist_similarity_min": 0.97
+          }
+        }
+      },
+      "low_color_delta_high_semantic": {
+        "global_semantic_similarity_min": 0.982,
+        "lab_delta_e2000_max": 2.0,
+        "hsv_hist_similarity_min": 0.97
+      },
+      "contrast_or_brightness_shift": {
+        "global_semantic_similarity_min": 0.982,
+        "equalized_dhash_similarity_min": 0.78,
+        "edge_dhash_similarity_min": 0.7,
+        "any_delta_min": {
+          "brightness_delta": 8.0,
+          "contrast_delta": 6.0,
+          "rgb_mean_abs_delta": 8.0
+        }
       }
-    },
-    "current_report_metrics_after_review_labels": {
-      "TP": 3914,
-      "FP": 0,
-      "FN": 302,
-      "TN": 16859,
-      "precision": 1.0,
-      "recall": 0.9283681214421252,
-      "f1": 0.9628536285362854
     }
   },
   "stage2": {
     "purpose": "fraud/renewal type explanation for Stage-1 similar pairs",
     "predicted_type_counts": {
-      "same_customer_repeat_review": 303,
-      "cross_customer_fraud": 3586,
-      "high_similarity_pending_identity": 16,
-      "same_name_cross_id_fraud": 8,
+      "same_customer_repeat_review": 160,
+      "cross_customer_fraud": 3747,
+      "high_similarity_pending_identity": 10,
+      "same_name_cross_id_fraud": 5,
       "normal_renewal_similarity": 1
     },
     "table_type_counts_on_predicted_similar": {
-      "cross_customer_fraud": 3254,
-      "reviewed_pair_positive": 347,
-      "same_customer_repeat_review": 312,
+      "same_customer_repeat_review": 165,
+      "not_labeled_similar": 2049,
+      "cross_customer_fraud": 1708,
       "normal_renewal_similarity": 1
     }
   },

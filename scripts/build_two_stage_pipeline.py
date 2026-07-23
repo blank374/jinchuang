@@ -61,6 +61,25 @@ MANIPULATION_EDIT_TYPES = {"brightness", "contrast", "rotate", "rotation", "crop
 MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD = 0.95
 MIRROR_DHASH_OVERRIDE_THRESHOLD = 0.98
 MIRROR_PROBABILITY_FLOOR = 0.38
+RECALL_FIRST_TARGET_RECALL = 0.95
+RECALL_FIRST_MIN_PRECISION = 0.55
+SOFT_MIRROR_SEMANTIC_FLOOR = 0.982
+SOFT_MIRROR_LOCAL_ORB_THRESHOLD = 0.65
+SOFT_MIRROR_DHASH_THRESHOLD = 0.84
+SEMANTIC_VISUAL_SEMANTIC_FLOOR = 0.985
+SEMANTIC_VISUAL_PROBABILITY_FLOOR = 0.12
+SEMANTIC_VISUAL_DHASH_THRESHOLD = 0.76
+SEMANTIC_VISUAL_EQUALIZED_DHASH_THRESHOLD = 0.78
+SEMANTIC_VISUAL_EDGE_DHASH_THRESHOLD = 0.70
+LOW_COLOR_DELTA_SEMANTIC_FLOOR = 0.982
+LOW_COLOR_DELTA_E2000_MAX = 2.0
+LOW_COLOR_DELTA_HSV_HIST_MIN = 0.97
+CONTRAST_SHIFT_SEMANTIC_FLOOR = 0.982
+CONTRAST_SHIFT_EQUALIZED_DHASH_MIN = 0.78
+CONTRAST_SHIFT_EDGE_DHASH_MIN = 0.70
+CONTRAST_SHIFT_BRIGHTNESS_DELTA_MIN = 8.0
+CONTRAST_SHIFT_CONTRAST_DELTA_MIN = 6.0
+CONTRAST_SHIFT_RGB_DELTA_MIN = 8.0
 POSITIVE_REVIEW_DECISIONS = {"确认相似", "CSV漏标，确认相似", "相似", "similar", "true", "1", "yes", "positive", "pair_label_positive"}
 NEGATIVE_REVIEW_DECISIONS = {"确认不相似", "误报/不采用", "不相似", "not_similar", "false", "0", "no"}
 
@@ -75,6 +94,27 @@ def dataset_loan_id_from_path(frame: pd.DataFrame) -> pd.Series:
 
 def pair_key(left: object, right: object) -> str:
     return "|".join(sorted((str(left), str(right))))
+
+
+def collapse_symmetric_pairs(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    before_rows = len(frame)
+    frame = frame[frame["query_loan_id"].astype(str) != frame["match_loan_id"].astype(str)].copy()
+    after_self_rows = len(frame)
+    sort_columns = [column for column in ["pair_key", "stage1_label", "reviewed_pair_label", "global_semantic_similarity", "rank"] if column in frame.columns]
+    ascending = [True]
+    for column in sort_columns[1:]:
+        ascending.append(column == "rank")
+    collapsed = (
+        frame.sort_values(sort_columns, ascending=ascending, na_position="last")
+        .drop_duplicates("pair_key", keep="first")
+        .reset_index(drop=True)
+    )
+    return collapsed, {
+        "rows_before_collapse": int(before_rows),
+        "self_pair_rows_removed": int(before_rows - after_self_rows),
+        "symmetric_direction_rows_removed": int(after_self_rows - len(collapsed)),
+        "unique_undirected_pairs": int(len(collapsed)),
+    }
 
 
 def review_decision_to_label(value: object) -> int | None:
@@ -199,6 +239,51 @@ def best_threshold(y_true: pd.Series | np.ndarray, probabilities: np.ndarray) ->
     return best
 
 
+def recall_first_threshold(
+    y_true: pd.Series | np.ndarray,
+    probabilities: np.ndarray,
+    target_recall: float,
+    min_precision: float,
+) -> dict[str, float | int | str]:
+    best_recall: dict[str, float | int | str] | None = None
+    best_f2: dict[str, float | int | str] | None = None
+    y = np.asarray(y_true).astype(bool)
+    for threshold in np.linspace(0.01, 0.95, 95):
+        prediction = probabilities >= threshold
+        tp = int((prediction & y).sum())
+        fp = int((prediction & ~y).sum())
+        fn = int((~prediction & y).sum())
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        beta2 = 4.0
+        f2 = (1 + beta2) * precision * recall / (beta2 * precision + recall) if precision + recall else 0.0
+        row: dict[str, float | int | str] = {
+            "threshold": float(threshold),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "f2": float(f2),
+            "selection_policy": "recall_first",
+            "target_recall": float(target_recall),
+            "min_precision": float(min_precision),
+        }
+        if recall >= target_recall and precision >= min_precision:
+            if best_recall is None or row["precision"] > best_recall["precision"]:
+                best_recall = row
+        if best_f2 is None or row["f2"] > best_f2["f2"]:
+            best_f2 = row
+    assert best_f2 is not None
+    if best_recall is not None:
+        best_recall["selection_reason"] = "met_target_recall_and_min_precision"
+        return best_recall
+    best_f2["selection_reason"] = "fallback_best_f2"
+    return best_f2
+
+
 def metrics_at_threshold(y_true: pd.Series | np.ndarray, probabilities: np.ndarray, threshold: float) -> dict[str, float | int]:
     y = np.asarray(y_true).astype(int)
     prediction = (probabilities >= threshold).astype(int)
@@ -225,22 +310,82 @@ def metrics_for_prediction(
     }
 
 
-def visual_override_mask(frame: pd.DataFrame, probabilities: pd.Series | np.ndarray | None = None) -> pd.Series:
-    mirror_orb = frame.get("mirror_local_structure_orb_ratio", pd.Series(0.0, index=frame.index)).astype(float)
-    mirror_hash = frame.get("mirror_dhash_similarity", pd.Series(0.0, index=frame.index)).astype(float)
+def numeric_feature(frame: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
+    return frame.get(column, pd.Series(default, index=frame.index)).astype(float)
+
+
+def visual_override_masks(frame: pd.DataFrame, probabilities: pd.Series | np.ndarray | None = None) -> dict[str, pd.Series]:
+    mirror_orb = numeric_feature(frame, "mirror_local_structure_orb_ratio")
+    mirror_hash = numeric_feature(frame, "mirror_dhash_similarity")
+    semantic = numeric_feature(frame, "global_semantic_similarity")
+    dhash = numeric_feature(frame, "dhash_similarity")
+    equalized_dhash = numeric_feature(frame, "equalized_dhash_similarity")
+    edge_dhash = numeric_feature(frame, "edge_dhash_similarity")
+    lab_delta = numeric_feature(frame, "lab_delta_e2000", default=999.0)
+    hsv_hist = numeric_feature(frame, "hsv_hist_similarity")
+    brightness_delta = numeric_feature(frame, "brightness_delta")
+    contrast_delta = numeric_feature(frame, "contrast_delta")
+    rgb_delta = numeric_feature(frame, "rgb_mean_abs_delta")
     if probabilities is None:
-        probability = frame.get("stage1_similarity_probability", pd.Series(0.0, index=frame.index)).astype(float)
+        probability = numeric_feature(frame, "stage1_similarity_probability")
     else:
         probability = pd.Series(probabilities, index=frame.index).astype(float)
-    return (
+    strong_mirror = (
         (probability >= MIRROR_PROBABILITY_FLOOR)
         & (mirror_orb >= MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD)
         & (mirror_hash >= MIRROR_DHASH_OVERRIDE_THRESHOLD)
     )
+    soft_mirror = (
+        (semantic >= SOFT_MIRROR_SEMANTIC_FLOOR)
+        & (mirror_orb >= SOFT_MIRROR_LOCAL_ORB_THRESHOLD)
+        & (mirror_hash >= SOFT_MIRROR_DHASH_THRESHOLD)
+    )
+    semantic_visual = (
+        (probability >= SEMANTIC_VISUAL_PROBABILITY_FLOOR)
+        & (semantic >= SEMANTIC_VISUAL_SEMANTIC_FLOOR)
+        & (
+            (dhash >= SEMANTIC_VISUAL_DHASH_THRESHOLD)
+            | (equalized_dhash >= SEMANTIC_VISUAL_EQUALIZED_DHASH_THRESHOLD)
+            | (edge_dhash >= SEMANTIC_VISUAL_EDGE_DHASH_THRESHOLD)
+            | ((lab_delta <= LOW_COLOR_DELTA_E2000_MAX) & (hsv_hist >= LOW_COLOR_DELTA_HSV_HIST_MIN))
+        )
+    )
+    low_color_delta = (
+        (semantic >= LOW_COLOR_DELTA_SEMANTIC_FLOOR)
+        & (lab_delta <= LOW_COLOR_DELTA_E2000_MAX)
+        & (hsv_hist >= LOW_COLOR_DELTA_HSV_HIST_MIN)
+    )
+    contrast_shift = (
+        (semantic >= CONTRAST_SHIFT_SEMANTIC_FLOOR)
+        & (equalized_dhash >= CONTRAST_SHIFT_EQUALIZED_DHASH_MIN)
+        & (edge_dhash >= CONTRAST_SHIFT_EDGE_DHASH_MIN)
+        & (
+            (brightness_delta >= CONTRAST_SHIFT_BRIGHTNESS_DELTA_MIN)
+            | (contrast_delta >= CONTRAST_SHIFT_CONTRAST_DELTA_MIN)
+            | (rgb_delta >= CONTRAST_SHIFT_RGB_DELTA_MIN)
+        )
+    )
+    return {
+        "strong_mirror_evidence": strong_mirror,
+        "soft_mirror_evidence": soft_mirror,
+        "semantic_visual_evidence": semantic_visual,
+        "low_color_delta_high_semantic": low_color_delta,
+        "contrast_or_brightness_shift": contrast_shift,
+    }
 
 
-def visual_override_reason(frame: pd.DataFrame) -> pd.Series:
-    return pd.Series(np.where(visual_override_mask(frame), "strong_mirror_evidence", ""), index=frame.index)
+def visual_override_mask(frame: pd.DataFrame, probabilities: pd.Series | np.ndarray | None = None) -> pd.Series:
+    combined = pd.Series(False, index=frame.index)
+    for mask in visual_override_masks(frame, probabilities).values():
+        combined = combined | mask
+    return combined
+
+
+def visual_override_reason(frame: pd.DataFrame, probabilities: pd.Series | np.ndarray | None = None) -> pd.Series:
+    reasons = pd.Series("", index=frame.index, dtype=object)
+    for reason, mask in visual_override_masks(frame, probabilities).items():
+        reasons = reasons.mask(mask, reasons.where(reasons.eq(""), reasons + ";") + reason)
+    return reasons
 
 
 def make_group_split(frame: pd.DataFrame, test_size: float, random_state: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -290,6 +435,9 @@ def main() -> None:
     parser.add_argument("--output-dir", default="outputs/mvp")
     parser.add_argument("--test-size", type=float, default=0.25)
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--threshold-policy", choices=["recall_first", "best_f1"], default="recall_first")
+    parser.add_argument("--target-recall", type=float, default=RECALL_FIRST_TARGET_RECALL)
+    parser.add_argument("--min-precision", type=float, default=RECALL_FIRST_MIN_PRECISION)
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -317,6 +465,7 @@ def main() -> None:
     pairs.loc[pairs["reviewed_pair_label"].notna(), "stage1_label"] = pairs.loc[
         pairs["reviewed_pair_label"].notna(), "reviewed_pair_label"
     ].astype(int)
+    pairs, symmetry_summary = collapse_symmetric_pairs(pairs)
 
     X_train, X_test, y_train, y_test = train_test_split(
         pairs[IMAGE_FEATURE_COLUMNS],
@@ -328,7 +477,10 @@ def main() -> None:
     pair_model = build_model()
     pair_model.fit(X_train, y_train)
     pair_test_probabilities = pair_model.predict_proba(X_test)[:, 1]
-    pair_best = best_threshold(y_test, pair_test_probabilities)
+    if args.threshold_policy == "recall_first":
+        pair_best = recall_first_threshold(y_test, pair_test_probabilities, args.target_recall, args.min_precision)
+    else:
+        pair_best = best_threshold(y_test, pair_test_probabilities)
     pair_threshold = float(pair_best["threshold"])
     pair_base_prediction = pair_test_probabilities >= pair_threshold
     pair_override = visual_override_mask(X_test, pair_test_probabilities).to_numpy()
@@ -338,7 +490,10 @@ def main() -> None:
     group_model = build_model()
     group_model.fit(group_train[IMAGE_FEATURE_COLUMNS], group_train["stage1_label"])
     group_test_probabilities = group_model.predict_proba(group_test[IMAGE_FEATURE_COLUMNS])[:, 1]
-    group_best = best_threshold(group_test["stage1_label"], group_test_probabilities)
+    if args.threshold_policy == "recall_first":
+        group_best = recall_first_threshold(group_test["stage1_label"], group_test_probabilities, args.target_recall, args.min_precision)
+    else:
+        group_best = best_threshold(group_test["stage1_label"], group_test_probabilities)
     group_threshold = float(group_best["threshold"])
     group_base_prediction = group_test_probabilities >= group_threshold
     group_override = visual_override_mask(group_test, group_test_probabilities).to_numpy()
@@ -363,6 +518,26 @@ def main() -> None:
     )
     pairs["stage2_predicted_type"] = pairs.apply(explain_stage2, axis=1)
     pairs["stage2_table_type"] = pairs.apply(table_stage2_type, axis=1)
+    final_metrics = metrics_for_prediction(
+        pairs["stage1_label"],
+        pairs["stage1_predicted_similar"],
+        pairs["stage1_similarity_probability"].to_numpy(),
+        final_threshold,
+    )
+    final_label = pairs["stage1_label"].astype(bool)
+    final_prediction = pairs["stage1_predicted_similar"].astype(bool)
+    final_confusion = {
+        "TP": int((final_label & final_prediction).sum()),
+        "FP": int((~final_label & final_prediction).sum()),
+        "FN": int((final_label & ~final_prediction).sum()),
+        "TN": int((~final_label & ~final_prediction).sum()),
+    }
+    visual_reason_counts = Counter(
+        reason
+        for value in pairs.loc[pairs["visual_override_predicted_similar"], "visual_override_reason"].fillna("")
+        for reason in str(value).split(";")
+        if reason
+    )
 
     stage1_columns = [
         "query_loan_id",
@@ -411,6 +586,17 @@ def main() -> None:
     summary = {
         "stage1": {
             "purpose": "image-only similar_group detection",
+            "operating_policy": {
+                "name": args.threshold_policy,
+                "risk_preference": "recall_first_false_positives_accepted_for_manual_review",
+                "target_recall": float(args.target_recall),
+                "min_precision": float(args.min_precision),
+            },
+            "pair_symmetry_handling": {
+                "policy": "undirected_pair_canonicalization",
+                "selection": "keep_highest_label_then_reviewed_then_global_similarity_then_best_rank",
+                **symmetry_summary,
+            },
             "image_features": IMAGE_FEATURE_COLUMNS,
             "label_definition": "same_similar_group OR renewal_base_pair, overridden by outputs/mvp/stage1_review.csv pair labels when present",
             "reviewed_pair_label_rows": int(pairs["reviewed_pair_label"].notna().sum()),
@@ -435,12 +621,47 @@ def main() -> None:
             "final_threshold_for_reports": final_threshold,
             "final_predicted_similar": int(pairs["stage1_predicted_similar"].sum()),
             "final_visual_override_predicted_similar": int(pairs["visual_override_predicted_similar"].sum()),
+            "final_report_metrics_after_review_labels": {**final_confusion, **final_metrics},
+            "final_visual_override_reason_counts": dict(visual_reason_counts),
             "visual_override_rules": {
                 "strong_mirror_evidence": {
                     "stage1_similarity_probability_min": MIRROR_PROBABILITY_FLOOR,
                     "mirror_local_structure_orb_ratio_min": MIRROR_LOCAL_ORB_OVERRIDE_THRESHOLD,
                     "mirror_dhash_similarity_min": MIRROR_DHASH_OVERRIDE_THRESHOLD,
-                }
+                },
+                "soft_mirror_evidence": {
+                    "global_semantic_similarity_min": SOFT_MIRROR_SEMANTIC_FLOOR,
+                    "mirror_local_structure_orb_ratio_min": SOFT_MIRROR_LOCAL_ORB_THRESHOLD,
+                    "mirror_dhash_similarity_min": SOFT_MIRROR_DHASH_THRESHOLD,
+                },
+                "semantic_visual_evidence": {
+                    "stage1_similarity_probability_min": SEMANTIC_VISUAL_PROBABILITY_FLOOR,
+                    "global_semantic_similarity_min": SEMANTIC_VISUAL_SEMANTIC_FLOOR,
+                    "any_of": {
+                        "dhash_similarity_min": SEMANTIC_VISUAL_DHASH_THRESHOLD,
+                        "equalized_dhash_similarity_min": SEMANTIC_VISUAL_EQUALIZED_DHASH_THRESHOLD,
+                        "edge_dhash_similarity_min": SEMANTIC_VISUAL_EDGE_DHASH_THRESHOLD,
+                        "low_color_delta": {
+                            "lab_delta_e2000_max": LOW_COLOR_DELTA_E2000_MAX,
+                            "hsv_hist_similarity_min": LOW_COLOR_DELTA_HSV_HIST_MIN,
+                        },
+                    },
+                },
+                "low_color_delta_high_semantic": {
+                    "global_semantic_similarity_min": LOW_COLOR_DELTA_SEMANTIC_FLOOR,
+                    "lab_delta_e2000_max": LOW_COLOR_DELTA_E2000_MAX,
+                    "hsv_hist_similarity_min": LOW_COLOR_DELTA_HSV_HIST_MIN,
+                },
+                "contrast_or_brightness_shift": {
+                    "global_semantic_similarity_min": CONTRAST_SHIFT_SEMANTIC_FLOOR,
+                    "equalized_dhash_similarity_min": CONTRAST_SHIFT_EQUALIZED_DHASH_MIN,
+                    "edge_dhash_similarity_min": CONTRAST_SHIFT_EDGE_DHASH_MIN,
+                    "any_delta_min": {
+                        "brightness_delta": CONTRAST_SHIFT_BRIGHTNESS_DELTA_MIN,
+                        "contrast_delta": CONTRAST_SHIFT_CONTRAST_DELTA_MIN,
+                        "rgb_mean_abs_delta": CONTRAST_SHIFT_RGB_DELTA_MIN,
+                    },
+                },
             },
         },
         "stage2": {
